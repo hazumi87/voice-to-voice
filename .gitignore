@@ -1,0 +1,12 @@
+# Python env + caches (deps live in the venv, rebuilt per machine)
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime / user-generated data (not shipped with the app)
+custom_voices/
+server.log
+*.wav
+
+# Editor / agent local
+.claude/
