@@ -24,3 +24,25 @@
 - `tailscale serve` replaced a pre-existing **Funnel** that pointed to :5173 (likely a prior
   Vite iteration). Changed public Funnel → tailnet-only serve. Reversible.
 - ollama gaming-mode killswitch remains the known failure point for the chat leg.
+
+## 2026-06-09 — Graduated to a harbor-supervised service
+- Added `GET /health` route for harbor probing (mirrors neutts `/health`).
+- `git init` + `.gitignore` (excludes .venv, *.wav, server.log, custom_voices/) + remote
+  `git@github.com:hazumi87/voice-to-voice.git`; committed + pushed `main`.
+- Registered in harbor: added a `voice-to-voice` entry to `F:\code\harbor\services.json`
+  mirroring `neutts-synth` (abs venv python, `args:[server.py]`, gpu:true, autostart:true,
+  git block, health `http://localhost:8123/health`, env: PYTHONUTF8 / HF_HUB_DISABLE_SYMLINKS=1 /
+  HF_HOME pinned to the shared cache / PORT=8123). Did NOT touch neutts or other services.
+- `harbor reload` (added voice-to-voice, all else unchanged) → `harbor start` → up in 8s.
+  Verified: /health 200, TTS round-trip OK, GPU coexists with neutts (~10.5 GB used / 5.5 free),
+  Tailscale HTTPS front still 200. `harbor restart` → self-recovered in 1s (supervision proof:
+  process is harbor-owned, survives VS Code closing; autostart brings it up on boot).
+- Registered the project in `hazumi87/project-registry` (projects.yaml) on a cross-surface
+  branch (PENDING MERGE by NUC canonical agent, per branch_required policy).
+
+### Decisions (2026-06-09)
+- Mirrored the neutts-synth registration mechanism exactly (edit services.json + harbor reload).
+- Omitted the Healthchecks `hc` block — must not invent a uuid; several services run without one.
+  harbor shows purple "running" (process-alive), same as neutts. **Follow-up:** provision a real hc uuid.
+- Kept the single global conversation `history` (fine for single user; multi-user is a noted follow-up).
+- Kept :8123 + Tailscale HTTPS (iPad mic needs the secure context).
