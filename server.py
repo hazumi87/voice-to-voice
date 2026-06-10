@@ -32,6 +32,7 @@ import torch
 from fastapi import FastAPI, UploadFile, File, Form, Body, Request
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 # Windows HF symlink footgun: copy instead of symlink.
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
@@ -231,6 +232,17 @@ history = []
 history_lock = threading.Lock()
 
 app = FastAPI(title="voice-to-voice prototype")
+
+# Browser consumers (e.g. the NUC asset-library audition player at http://hazwebserver)
+# call /synthesize_ref cross-origin. A multipart POST triggers a CORS preflight (OPTIONS),
+# so the service must answer it AND advertise Access-Control-Allow-Origin on the response.
+# Endpoint returns raw WAV bytes with no cookies/credentials, so allow_origins=["*"] is safe.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------
