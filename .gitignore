@@ -10,3 +10,4 @@ server.log
 
 # Editor / agent local
 .claude/
+prompts.json

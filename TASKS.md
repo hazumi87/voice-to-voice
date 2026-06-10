@@ -46,3 +46,26 @@
   harbor shows purple "running" (process-alive), same as neutts. **Follow-up:** provision a real hc uuid.
 - Kept the single global conversation `history` (fine for single user; multi-user is a noted follow-up).
 - Kept :8123 + Tailscale HTTPS (iPad mic needs the secure context).
+
+## 2026-06-09 — Port moved 8123 → 8221 (NUC services band) + harbor entry de-git'd
+- Checked NUC port registry (`/opt/dev/infrastructure/ports.json`): 8200–8299 = "services"
+  band (internal infra). neutts-synth is 8220; **8221 is the first free slot** (not registered,
+  not listening locally or on NUC). Moved off the lone 8123 outlier into the band with its sibling.
+- Edited `PORT` default in `server.py` (8123 → 8221) + all docs (ARCHITECTURE.md ×4, README.md).
+  Frontend uses relative URLs — no client change needed.
+- **harbor services.json entry revised** (handed to NUC agent, not applied from VRPC):
+  - Removed the `git` block — VRPC is canonical; harbor never needs to pull (commit is already in
+    the tree). Harbor just supervises/restarts. (Removing the pull also kills the dirty-file class
+    of failure.)
+  - `PORT` env → 8221. `autostart: true` retained. `gpu: true`, `/health` retained.
+- **COMPANION STEP (host config, NOT done here):** `tailscale serve` currently proxies 443 →
+  127.0.0.1:**8123**. Must be repointed to **8221** or the iPad HTTPS front breaks. Tailscale
+  config is host-level (not in repo) — Eric / the NUC-side flow must repoint it when the new
+  services.json goes live.
+
+### Decisions (2026-06-09, port move)
+- Moved into the NUC-registry "services" band (8221) for consistency with neutts (8220) and to
+  stop 8123 being a registry-drift outlier. Registry confirms 8221 free on both NUC and VRPC.
+- Dropped harbor `git` block: canonical-on-VRPC means pull is redundant and a foot-gun.
+- Speak-MCP rollout (agreed): OmniVoice added as a *selectable* engine first (neutts stays
+  default), tested via explicit `engine: omnivoice`, promoted to default only after Eric approves.

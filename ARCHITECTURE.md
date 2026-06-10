@@ -34,7 +34,7 @@ iPad browser (Safari/Chrome — both WebKit on iOS)
 Tailscale serve  https://vrpc-3.tail567253.ts.net  (port 443, tailnet-only)
    │  proxy → loopback
    ▼
-FastAPI / uvicorn   0.0.0.0:8123   (server.py)   ── serves static frontend + JSON/audio API
+FastAPI / uvicorn   0.0.0.0:8221   (server.py)   ── serves static frontend + JSON/audio API
    ├── STT   faster-whisper base.en  (CUDA/float16, in-process)         ─┐
    ├── CHAT  HTTP → ollama 127.0.0.1:11434  (llama3.2:3b)                │ all on the VRPC,
    └── TTS   OmniVoice k2-fsa/OmniVoice (CUDA/float16, in-process)       ─┘ single GPU (RTX 4080)
@@ -63,7 +63,7 @@ local HTTP. The browser never talks to ollama directly.
 | faster-whisper `base.en` (~141 MB) | **PC user cache** `…\models--Systran--faster-whisper-base.en` | ctranslate2 format |
 | LLM `llama3.2:3b` | **System (ollama store)** `%USERPROFILE%\.ollama` | pulled via `ollama pull`; `llama3.1` also present |
 | ollama runtime | **System service** `OllamaService` @ 127.0.0.1:11434 | auto-starts at boot, localhost-only |
-| HTTPS exposure | **Tailscale config** (not in project) | `tailscale serve` 443 → 127.0.0.1:8123, tailnet-only |
+| HTTPS exposure | **Tailscale config** (not in project) | `tailscale serve` 443 → 127.0.0.1:8221, tailnet-only |
 
 **Key point for the architect:** the *code* + *custom voices* are self-contained in the project folder, but the
 base *models* live in the shared HF cache and the *LLM* lives in ollama — neither is in the project folder.
@@ -74,7 +74,7 @@ models don't unless the HF cache is copied too).
 
 ## 4. API contract
 
-Base URL (tailnet): `https://vrpc-3.tail567253.ts.net`  ·  Local: `http://127.0.0.1:8123`
+Base URL (tailnet): `https://vrpc-3.tail567253.ts.net`  ·  Local: `http://127.0.0.1:8221`
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
@@ -167,7 +167,7 @@ editable text to `/api/preview?text=…` with the current voice + tuning — pur
 
 ## 9. Networking / access / iOS gotchas
 
-- **HTTPS is mandatory for the mic.** iOS `getUserMedia` only works on a secure context. Served via `tailscale serve` with a valid `.ts.net` cert. Use the bare hostname URL (port 443) — **not** the IP and **not** `:8123` (plain HTTP → "invalid response").
+- **HTTPS is mandatory for the mic.** iOS `getUserMedia` only works on a secure context. Served via `tailscale serve` with a valid `.ts.net` cert. Use the bare hostname URL (port 443) — **not** the IP and **not** `:8221` (plain HTTP → "invalid response").
 - **No Windows firewall rule needed** — Tailscale proxies to loopback.
 - **iOS mic re-prompts every page load.** All iOS browsers are WebKit; the per-site mic grant resets per session. Only **Safari** persists it (Website Settings → Microphone → Allow) or via **Add to Home Screen** (standalone PWA). Chrome-iOS has no persistent allow.
 - **iOS recording bug worked around:** a fresh `getUserMedia` stream per recording (reused streams record 0 bytes on iOS); `MediaRecorder.start(200)` timeslice flushes chunks.
@@ -226,5 +226,5 @@ F:\Code\voice-to-voice\
 ```bat
 start.bat
 ```
-(or `.venv\Scripts\python.exe server.py`). Binds `0.0.0.0:8123`. `tailscale serve` fronts it on
+(or `.venv\Scripts\python.exe server.py`). Binds `0.0.0.0:8221`. `tailscale serve` fronts it on
 `https://vrpc-3.tail567253.ts.net/`. ollama (`OllamaService`) must be running. Open the HTTPS URL on the iPad.

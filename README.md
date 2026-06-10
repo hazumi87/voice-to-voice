@@ -16,7 +16,7 @@ iPad mic (push-to-talk)
 ```
 start.bat              # or: .venv\Scripts\python.exe server.py
 ```
-Server listens on `0.0.0.0:8123`. `tailscale serve` fronts it over HTTPS.
+Server listens on `0.0.0.0:8221`. `tailscale serve` fronts it over HTTPS.
 
 ## Open on the iPad
 **https://vrpc-3.tail567253.ts.net/**

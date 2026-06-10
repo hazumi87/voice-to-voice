@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Voice Prototype — reword × voice × personality</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, system-ui, sans-serif;
+    background: #0e1116; color: #e6edf3; padding: 20px;
+    min-height: 100dvh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { opacity: .55; font-size: 13px; margin: 0 0 20px; }
+  .card { background: #11161d; border: 1px solid #21262d; border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 12px; opacity: .65; margin: 0 0 6px; letter-spacing: .3px; }
+  textarea, select, input[type=text], input[type=number] {
+    width: 100%; background: #0e1116; color: #e6edf3; border: 1px solid #2a313b;
+    border-radius: 9px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  textarea { min-height: 78px; resize: vertical; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 140px; }
+  .seg { display: flex; gap: 0; border: 1px solid #2a313b; border-radius: 9px; overflow: hidden; }
+  .seg button {
+    flex: 1; background: #0e1116; color: #e6edf3; border: none; padding: 9px 6px;
+    font-size: 13px; cursor: pointer; border-right: 1px solid #2a313b;
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: #1f6feb; color: #fff; }
+  .speak {
+    width: 100%; background: #238636; color: #fff; border: none; border-radius: 10px;
+    padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  .speak:disabled { opacity: .5; cursor: default; }
+  .out { margin-top: 14px; }
+  .spoken { background: #0e1116; border: 1px solid #2a313b; border-radius: 9px; padding: 10px 12px;
+            font-size: 14px; min-height: 20px; white-space: pre-wrap; }
+  .meta { font-size: 11px; opacity: .5; margin-top: 6px; }
+  audio { width: 100%; margin-top: 12px; }
+  .muted { opacity: .5; font-size: 12px; }
+  .tune summary { cursor: pointer; font-size: 12px; opacity: .65; }
+  .tune[open] summary { margin-bottom: 12px; }
+  .err { color: #f85149; font-size: 13px; margin-top: 10px; }
+  .small { font-size: 11px; opacity: .5; margin-top: 4px; }
+  .comp { margin-bottom: 12px; }
+  .comp .tag { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.5px;
+    padding:2px 7px; border-radius:5px; background:#1f6feb22; color:#79b8ff; border:1px solid #1f6feb55; }
+  .comp .src { font-size:10px; opacity:.4; margin-left:8px; font-family:ui-monospace,monospace; }
+  .comp .body { margin-top:6px; background:#0e1116; border:1px solid #2a313b; border-radius:8px;
+    padding:9px 11px; font-size:13px; line-height:1.5; white-space:pre-wrap; }
+  .final { margin-top:6px; background:#0d1f12; border:1px solid #238636aa; border-radius:8px;
+    padding:10px 12px; font-size:13px; line-height:1.5; white-space:pre-wrap; }
+  .verbatim { background:#1f1605; border:1px solid #9e6a1e; border-radius:8px; padding:10px 12px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <a href="/" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">◂ App</a>
+    <a href="/prototype.html" style="padding:7px 14px;border-radius:8px;background:#1f6feb;color:#fff;text-decoration:none;font-size:13px;font-weight:600">Prototype</a>
+  </div>
+  <h1>Voice Prototype</h1>
+  <p class="sub">Test the pull-side: <b>reword</b> (none / light / full) × <b>voice/accent</b> × <b>personality</b>. The agent's words go in; the personality rewords them (or not); OmniVoice speaks it.</p>
+
+  <div class="seg" id="tabs" style="margin-bottom:16px;max-width:320px">
+    <button data-tab="test" class="on">Test</button>
+    <button data-tab="prompts">Prompts</button>
+  </div>
+
+  <div id="tab-test">
+  <div class="card">
+    <label>Status preset (fills the box — still editable)</label>
+    <select id="statusPreset" style="margin-bottom:12px">
+      <option value="">— choose a sample —</option>
+    </select>
+    <label>Text to speak (the agent's words)</label>
+    <textarea id="text">Where we landed — the seam itself is done. Aurora accepted the whole event and command surface, and I ratified their answers.</textarea>
+
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label>Voice</label>
+        <select id="voice"></select>
+        <div class="small">or upload an ad-hoc clip below (overrides this)</div>
+      </div>
+      <div>
+        <label>Personality</label>
+        <select id="personality"></select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label>Reword strength</label>
+        <div class="seg" id="strength">
+          <button data-v="none" class="on">none (verbatim)</button>
+          <button data-v="light">light</button>
+          <button data-v="full">full</button>
+        </div>
+        <div class="small" id="strengthHint">Speak the text exactly; personality ignored.</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label>Built-in clip (no upload — iPad-friendly)</label>
+        <select id="refClip"><option value="">— none (use Voice above) —</option></select>
+        <div class="small">overrides Voice; great for testing accent clips like kim-huat</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label>…or upload an ad-hoc wav</label>
+        <input type="file" id="wav" accept="audio/*" />
+      </div>
+      <div>
+        <label>Ref transcript (optional — else auto-STT)</label>
+        <input type="text" id="refText" placeholder="leave blank to transcribe" />
+      </div>
+    </div>
+
+    <details class="tune" style="margin-top:14px">
+      <summary>Tuning</summary>
+      <div class="row">
+        <div><label>Speed</label><input type="number" id="speed" value="1.0" step="0.05" min="0.7" max="1.4"></div>
+        <div><label>Vibrance (guidance)</label><input type="number" id="guidance" value="2.0" step="0.1" min="1.0" max="4.0"></div>
+        <div><label>Temperature</label><input type="number" id="temperature" value="0.0" step="0.1" min="0" max="0.8"></div>
+        <div><label>Steps</label><input type="number" id="steps" value="32" step="2" min="12" max="48"></div>
+      </div>
+    </details>
+
+    <button class="speak" id="go">Speak</button>
+    <div class="err" id="err"></div>
+
+    <div class="out">
+      <label>What was actually spoken</label>
+      <div class="spoken" id="spoken"><span class="muted">— nothing yet —</span></div>
+      <div class="meta" id="meta"></div>
+      <audio id="player" controls></audio>
+    </div>
+  </div>
+
+  <details class="card" id="anatomyCard" open>
+    <summary style="cursor:pointer;font-size:14px;font-weight:600">Prompt anatomy — how the reword prompt is built (live)</summary>
+    <p class="small" style="margin:8px 0 14px">The exact system prompt sent to <span id="anModel">ollama</span> for the current <b>personality + strength</b>, broken into the real components in the code. Updates as you change them.</p>
+    <div id="anatomy"></div>
+  </details>
+  </div><!-- /tab-test -->
+
+  <div id="tab-prompts" style="display:none">
+    <div class="card">
+      <p class="sub" style="margin-top:0">Edit the prompt blocks. <b>Strength</b> (2 shared blocks) and <b>Voice style</b> (1 shared) apply to all characters; each <b>character</b> blurb is unique. Save persists to <code>prompts.json</code> and applies live — no restart.</p>
+
+      <label>STRENGTH · light</label>
+      <textarea id="p_light" style="min-height:90px"></textarea>
+      <label style="margin-top:14px">STRENGTH · full</label>
+      <textarea id="p_full" style="min-height:90px"></textarea>
+      <label style="margin-top:14px">VOICE_STYLE (appended to every reword)</label>
+      <textarea id="p_voicestyle" style="min-height:70px"></textarea>
+
+      <label style="margin-top:18px">CHARACTERS (unique per personality)</label>
+      <div id="p_characters"></div>
+
+      <button class="speak" id="savePrompts" style="margin-top:6px">Save prompts</button>
+      <div class="err" id="saveErr"></div>
+      <div class="small" id="saveOk"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let strength = "none";
+
+const HINTS = {
+  none: "Speak the text exactly; personality ignored.",
+  light: "Subtle dialect/word flavoring; same meaning + length.",
+  full: "Reworded fully in-character; meaning kept, wording/length may change.",
+};
+
+// Voice + personality pickers from the live API.
+async function loadOptions() {
+  try {
+    const v = await (await fetch("/api/voices")).json();
+    const vs = $("#voice");
+    (v.voices || v || []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.id; opt.textContent = (o.label || o.id) + (o.custom ? " (custom)" : "");
+      vs.appendChild(opt);
+    });
+    if (v.default) vs.value = v.default;
+  } catch (e) {}
+  try {
+    const p = await (await fetch("/api/personalities")).json();
+    const ps = $("#personality");
+    (p.personalities || p || []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.id; opt.textContent = o.label + (o.group ? "  ·  " + o.group : "");
+      ps.appendChild(opt);
+    });
+    if (p.default) ps.value = p.default;
+  } catch (e) {}
+  try {
+    const c = await (await fetch("/api/prototype/refclips")).json();
+    const cs = $("#refClip");
+    (c.clips || []).forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      cs.appendChild(opt);
+    });
+  } catch (e) {}
+  try {
+    const s = await (await fetch("/api/prototype/status_presets")).json();
+    const ss = $("#statusPreset"); window._presets = {};
+    (s.presets || []).forEach(p => {
+      window._presets[p.id] = p.text;
+      const opt = document.createElement("option");
+      opt.value = p.id; opt.textContent = p.label;
+      ss.appendChild(opt);
+    });
+  } catch (e) {}
+}
+loadOptions().then(refreshAnatomy);
+
+// Status preset -> fills (still editable) text box.
+$("#statusPreset").addEventListener("change", e => {
+  const t = (window._presets || {})[e.target.value];
+  if (t) $("#text").value = t;
+});
+
+// Prompt anatomy: fetch the EXACT assembly for current personality + strength and render it.
+async function refreshAnatomy() {
+  const personality = $("#personality").value || "friendly";
+  const box = $("#anatomy");
+  try {
+    const d = await (await fetch(`/api/prototype/prompt?personality=${encodeURIComponent(personality)}&strength=${strength}`)).json();
+    $("#anModel").textContent = d.model || "ollama";
+    if (!d.calls_llm) {
+      box.innerHTML = `<div class="verbatim"><b>strength = none</b> — no LLM call is made. The text is spoken <b>verbatim</b>. (Personality is ignored at this strength.)</div>`;
+      return;
+    }
+    let html = `<div class="small" style="margin-bottom:10px;font-family:ui-monospace,monospace">${d.assembly}</div>`;
+    d.components.forEach(c => {
+      html += `<div class="comp"><span class="tag">${c.label}</span><span class="src">${c.source}</span><div class="body">${escapeHtml(c.text)}</div></div>`;
+    });
+    html += `<div class="comp"><span class="tag" style="background:#23863622;color:#3fb950;border-color:#23863688">FULL SYSTEM PROMPT</span><div class="final">${escapeHtml(d.system_prompt)}</div></div>`;
+    html += `<div class="comp"><span class="tag">USER MESSAGE</span><div class="body">&lt;the text you typed above&gt;</div></div>`;
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<div class="small">couldn't load prompt anatomy: ${e}</div>`;
+  }
+}
+function escapeHtml(s){ return (s||"").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+$("#personality").addEventListener("change", refreshAnatomy);
+
+// --- Tabs ---
+$("#tabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const tab = b.dataset.tab;
+  [...$("#tabs").children].forEach(x => x.classList.toggle("on", x === b));
+  $("#tab-test").style.display = tab === "test" ? "" : "none";
+  $("#tab-prompts").style.display = tab === "prompts" ? "" : "none";
+  if (tab === "prompts") loadPrompts();
+});
+
+// --- Prompts editor ---
+let _promptsLoaded = false;
+async function loadPrompts() {
+  if (_promptsLoaded) return;
+  try {
+    const d = await (await fetch("/api/prototype/prompts")).json();
+    $("#p_light").value = d.strength.light || "";
+    $("#p_full").value = d.strength.full || "";
+    $("#p_voicestyle").value = d.voice_style || "";
+    const groups = {};
+    (d.characters || []).forEach(c => { (groups[c.group] = groups[c.group] || []).push(c); });
+    let html = "";
+    Object.keys(groups).forEach(g => {
+      html += `<div class="small" style="margin:14px 0 6px;opacity:.7;font-weight:600">${g}</div>`;
+      groups[g].forEach(c => {
+        html += `<div class="comp"><span class="tag">${escapeHtml(c.label)}</span>` +
+                `<span class="src">${c.id}</span>` +
+                `<textarea data-cid="${c.id}" style="min-height:64px;margin-top:6px">${escapeHtml(c.system)}</textarea></div>`;
+      });
+    });
+    $("#p_characters").innerHTML = html;
+    _promptsLoaded = true;
+  } catch (e) {
+    $("#p_characters").innerHTML = `<div class="small">couldn't load prompts: ${e}</div>`;
+  }
+}
+
+$("#savePrompts").addEventListener("click", async () => {
+  $("#saveErr").textContent = ""; $("#saveOk").textContent = "";
+  $("#savePrompts").disabled = true; $("#savePrompts").textContent = "Saving…";
+  const characters = [...document.querySelectorAll("#p_characters textarea")].map(t => ({
+    id: t.dataset.cid, system: t.value,
+  }));
+  const cfg = {
+    strength: { light: $("#p_light").value, full: $("#p_full").value },
+    voice_style: $("#p_voicestyle").value,
+    characters,
+  };
+  try {
+    const r = await fetch("/api/prototype/prompts", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status + " " + JSON.stringify(await r.json().catch(()=>({}))));
+    $("#saveOk").textContent = "Saved + applied live. Switch to Test and try it.";
+    refreshAnatomy();  // anatomy panel now reflects the new prompts
+  } catch (e) {
+    $("#saveErr").textContent = String(e.message || e);
+  } finally {
+    $("#savePrompts").disabled = false; $("#savePrompts").textContent = "Save prompts";
+  }
+});
+
+$("#strength").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  strength = b.dataset.v;
+  [...$("#strength").children].forEach(x => x.classList.toggle("on", x === b));
+  $("#strengthHint").textContent = HINTS[strength];
+  refreshAnatomy();
+});
+
+$("#go").addEventListener("click", async () => {
+  const text = $("#text").value.trim();
+  if (!text) { $("#err").textContent = "Enter some text."; return; }
+  $("#err").textContent = "";
+  $("#go").disabled = true; $("#go").textContent = "Rendering…";
+  $("#spoken").innerHTML = '<span class="muted">…</span>';
+  $("#meta").textContent = ""; $("#player").removeAttribute("src");
+
+  // iOS unlock: prime the audio element INSIDE this tap gesture (synchronous,
+  // NON-blocking — never await here or a rejected play() on iOS stalls the whole
+  // handler and the fetch never fires). Controls are visible as a manual fallback.
+  const pl = $("#player");
+  try { pl.muted = true; const p = pl.play(); if (p && p.catch) p.catch(()=>{}); } catch(e) {}
+
+  const fd = new FormData();
+  fd.set("text", text);
+  fd.set("strength", strength);
+  fd.set("personality", $("#personality").value);
+  fd.set("voice", $("#voice").value);
+  fd.set("speed", $("#speed").value);
+  fd.set("guidance", $("#guidance").value);
+  fd.set("temperature", $("#temperature").value);
+  fd.set("steps", $("#steps").value);
+  const clip = $("#refClip").value;
+  const f = $("#wav").files[0];
+  if (clip) {
+    fd.set("ref_clip", clip);
+  } else if (f) {
+    fd.set("wav", f);
+    if ($("#refText").value.trim()) fd.set("ref_text", $("#refText").value.trim());
+  }
+
+  const t0 = performance.now();
+  const ctrl = new AbortController();
+  const killer = setTimeout(() => ctrl.abort(), 120000); // never spin forever
+  try {
+    const r = await fetch("/api/prototype/speak", { method: "POST", body: fd, signal: ctrl.signal });
+    if (!r.ok) {
+      let d = ""; try { d = JSON.stringify(await r.json()); } catch(e){}
+      throw new Error("HTTP " + r.status + " " + d);
+    }
+    const spoken = decodeURIComponent(r.headers.get("x-spoken-text") || "");
+    const usedVoice = r.headers.get("x-voice") || "";
+    const blob = await r.blob();
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    $("#spoken").textContent = spoken || text;
+    $("#meta").textContent = `voice=${usedVoice} · strength=${strength} · ${dt}s · ${(blob.size/1024|0)} KB`;
+    const url = URL.createObjectURL(blob);
+    pl.muted = false; pl.src = url; pl.load();
+    pl.play().catch(()=>{ /* iOS may still gate; controls are visible to tap play */ });
+  } catch (e) {
+    const msg = e.name === "AbortError" ? "Timed out (120s) — model may be busy. Try again." : String(e.message || e);
+    $("#err").textContent = msg;
+    $("#spoken").innerHTML = '<span class="muted">—</span>';
+  } finally {
+    clearTimeout(killer);
+    $("#go").disabled = false; $("#go").textContent = "Speak";
+  }
+});
+</script>
+</body>
+</html>

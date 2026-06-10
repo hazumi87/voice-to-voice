@@ -71,6 +71,13 @@ PERSONALITIES = [
     {"id": "noir", "label": "Noir Detective", "group": "Characters",
      "system": "You are a hardboiled 1940s film-noir detective. You speak in terse, moody, "
                "metaphor-soaked lines, like a world-weary monologue from a smoky back-alley bar."},
+    {"id": "sg_uncle", "label": "Singaporean Uncle", "group": "Characters",
+     "system": "You are a friendly Singaporean uncle who speaks gentle, natural Singlish. Use "
+               "Singlish lightly: AT MOST ONE particle (like 'lah', 'lor', 'leh') in a sentence, and "
+               "NOT in every sentence - many sentences should have none. The rhythm and word order "
+               "carry the accent more than the particles do. Occasionally a phrase like 'can or not' "
+               "or 'where got' is fine, but sparingly. Be warm and matter-of-fact, like a real uncle "
+               "at the kopitiam - understated, not a caricature."},
 
     # --- By Generation ---
     {"id": "boomer", "label": "Baby Boomer", "group": "By Generation",
@@ -119,6 +126,36 @@ PERSONALITIES = [
 ]
 PERSONALITY_BY_ID = {p["id"]: p for p in PERSONALITIES}
 DEFAULT_PERSONALITY = "friendly"
+
+# Sample status-report paragraphs for the prototype (pick instead of retyping). A spread
+# from plain to technical to terse to long, so reword can be tested against real-shaped text.
+STATUS_PRESETS = [
+    {"id": "plain", "label": "Plain status",
+     "text": "Where we landed — the seam itself is done. Aurora accepted the whole event and "
+             "command surface, and I ratified their answers. The only open items are integration "
+             "mechanics on my side, not the contract."},
+    {"id": "technical", "label": "Technical (stack / latency)",
+     "text": "Service is green on port eighty-two twenty-one. Health returns loaded true with "
+             "twenty-one voices. The synthesize endpoint renders a twenty-four kilohertz mono wav "
+             "in about one and a half seconds on the four-eighty, and the clone prompt is cached "
+             "after first use so repeat calls skip re-encoding."},
+    {"id": "terse", "label": "Terse one-liner",
+     "text": "Seam's done, contract ratified, only integration left on my side."},
+    {"id": "long", "label": "Long multi-sentence",
+     "text": "Here's where we are. The registration path is wired end to end: you pick a clip, "
+             "name it, and it lands in the catalog as a voice. The consumer pulls it on demand and "
+             "caches the encoded prompt, so the engine stays stateless and relocatable. Aurora "
+             "signed off on the whole event and command surface, and I ratified their answers. "
+             "What's left is integration mechanics on my side, plus deciding how the picker filters "
+             "voices once there are more than a handful. Nothing blocking, just sequencing."},
+    {"id": "blocker", "label": "Blocker / escalation",
+     "text": "I'm blocked on the port registry write. The file is root owned and the service "
+             "account has no sudo for it, so neither the shell nor the broker can touch it. I need "
+             "a root capable actor to make the edit before I can move forward."},
+    {"id": "milestone", "label": "Milestone done",
+     "text": "Milestone hit. OmniVoice is live as the default speak engine, the voice prototype is "
+             "up on the tablet, and the asset library rundoc is written for the agent. Calling it."},
+]
 
 # Voice-design presets (instruct strings -> OmniVoice). No reference audio needed.
 # Broad browsable set across gender x accent plus a few character voices.
@@ -231,6 +268,127 @@ def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY) -> str:
     return reply
 
 
+# ---------------------------------------------------------------------------
+# Personality REWORD transform (pull-side prototype)
+#
+# Distinct from chat(): chat() GENERATES a reply in-character (personality = the
+# agent). reword() takes text the agent ALREADY wrote and rephrases it in a
+# personality's voice BEFORE synthesis. This is the speak()-world mechanic: the
+# agent says X, the pull side rewords X, then OmniVoice speaks it.
+#
+# `strength` is a spectrum, not a toggle:
+#   none  -> speak verbatim, personality ignored
+#   light -> subtle accent/dialect flavoring; SAME meaning + ~same length
+#   full  -> rephrase fully in-character (slang, cadence); meaning preserved,
+#            length may change
+# Stateless (no history) — it's a transform, not a conversation.
+# ---------------------------------------------------------------------------
+REWORD_STRENGTH = {
+    "light": (
+        "Lightly adjust the following line to carry a SUBTLE flavor of the character's dialect "
+        "and rhythm. Keep the SAME meaning, the same facts, and roughly the same length. Change "
+        "as FEW words as possible - mostly word order and cadence, not vocabulary. Add at MOST one "
+        "piece of dialect slang in the whole line, and only if it fits naturally; often add none. "
+        "Do not literalize metaphors. Output ONLY the adjusted line, nothing else."
+    ),
+    "full": (
+        "Rephrase the following line in the character's voice - their cadence, attitude, and some "
+        "slang. Preserve the underlying meaning and facts; do not literalize figurative phrases. "
+        "Use the character's slang TASTEFULLY and sparingly - at most a couple of dialect markers "
+        "in the whole line, never one in every sentence. Sound authentic, not like a caricature. "
+        "Output ONLY the rephrased line, nothing else."
+    ),
+}
+
+
+def reword(text: str, personality_id: str = DEFAULT_PERSONALITY, strength: str = "full") -> str:
+    """Rephrase already-written text in a personality's voice (pull-side transform)."""
+    text = (text or "").strip()
+    if not text or strength == "none":
+        return text
+    instr = REWORD_STRENGTH.get(strength, REWORD_STRENGTH["full"])
+    persona = PERSONALITY_BY_ID.get(personality_id, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
+    # The persona's own system prompt establishes WHO the character is; instr says
+    # HOW hard to transform. VOICE_STYLE keeps it speech-shaped (no markdown, short).
+    system = persona["system"] + " " + instr + VOICE_STYLE
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": text},
+        ],
+        "stream": False,
+        "options": {"temperature": 0.7, "num_predict": 200},
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=payload,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read())
+    return data["message"]["content"].strip()
+
+
+# ---------------------------------------------------------------------------
+# Editable prompts config (dev-panel pattern: edits persist to prompts.json,
+# hot-reloaded into the running service; hardcoded values above are the defaults).
+#
+# The editable surface is exactly the 3 prompt component types you identified:
+#   - strength.light / strength.full   (the 2 shared STRENGTH blocks)
+#   - voice_style                      (the 1 shared VOICE_STYLE block)
+#   - characters[<id>]                 (each personality's unique CHARACTER blurb)
+# Saving overlays prompts.json onto the in-memory REWORD_STRENGTH / VOICE_STYLE /
+# PERSONALITY_BY_ID so reword() + the anatomy endpoint immediately use the edits.
+# ---------------------------------------------------------------------------
+PROMPTS_PATH = os.path.join(HERE, "prompts.json")
+
+
+def current_prompts() -> dict:
+    """The current editable prompt strings (defaults + any saved overrides applied)."""
+    return {
+        "strength": {"light": REWORD_STRENGTH["light"], "full": REWORD_STRENGTH["full"]},
+        "voice_style": VOICE_STYLE,
+        "characters": [
+            {"id": p["id"], "label": p["label"], "group": p.get("group", "Other"),
+             "system": p["system"]}
+            for p in PERSONALITIES
+        ],
+    }
+
+
+def apply_prompts(cfg: dict):
+    """Overlay a prompts dict onto the live in-memory strings (hot-reload)."""
+    global VOICE_STYLE
+    st = cfg.get("strength") or {}
+    for k in ("light", "full"):
+        if isinstance(st.get(k), str) and st[k].strip():
+            REWORD_STRENGTH[k] = st[k]
+    if isinstance(cfg.get("voice_style"), str) and cfg["voice_style"].strip():
+        VOICE_STYLE = cfg["voice_style"]
+    for c in (cfg.get("characters") or []):
+        p = PERSONALITY_BY_ID.get(c.get("id"))
+        if p and isinstance(c.get("system"), str) and c["system"].strip():
+            p["system"] = c["system"]
+
+
+def load_prompts_override():
+    """At startup: if prompts.json exists, apply it over the hardcoded defaults."""
+    if os.path.isfile(PROMPTS_PATH):
+        try:
+            apply_prompts(json.load(open(PROMPTS_PATH, encoding="utf-8")))
+            print(f"[prompts] applied overrides from {PROMPTS_PATH}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[prompts] failed to load {PROMPTS_PATH}: {e}", flush=True)
+
+
+def save_prompts(cfg: dict):
+    """Persist edits to prompts.json AND hot-reload them into the running service."""
+    apply_prompts(cfg)                       # live first
+    with open(PROMPTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(current_prompts(), f, ensure_ascii=False, indent=2)
+
+
+load_prompts_override()
+
+
 def decode_audio_to_wave(raw: bytes):
     """Decode any uploaded/recorded audio (mp4/AAC/webm/wav) -> mono float32 @ TTS_SR."""
     container = av.open(io.BytesIO(raw))
@@ -268,6 +426,43 @@ def build_clone_prompt(wav_np, ref_text: str):
         return tts_model.create_voice_clone_prompt(
             ref_audio=(wav_np, TTS_SR), ref_text=ref_text, preprocess_prompt=True
         )
+
+
+# Built-in reference clips for the prototype (working/ dir). iPad-friendly: pick by
+# name instead of uploading. Prompts are cached so a clip is only encoded once.
+WORKING_DIR = os.path.join(HERE, "working")
+_refclip_cache = {}  # name -> clone prompt
+
+
+def list_ref_clips():
+    """Wav files in working/ that can be used as built-in prototype reference voices."""
+    try:
+        return sorted(f for f in os.listdir(WORKING_DIR)
+                      if f.lower().endswith(".wav") and not f.startswith("_"))
+    except FileNotFoundError:
+        return []
+
+
+def ref_clip_prompt(name: str):
+    """Load + cache a clone prompt for a working/ reference clip (encode once)."""
+    name = os.path.basename(name)  # no path traversal
+    if name in _refclip_cache:
+        return _refclip_cache[name]
+    path = os.path.join(WORKING_DIR, name)
+    if not os.path.isfile(path):
+        return None
+    wav, sr = sf.read(path)
+    clip = np.asarray(wav, dtype=np.float32)
+    if clip.ndim > 1:
+        clip = clip.mean(axis=1)
+    clip = trim_edges(clip)
+    _b = io.BytesIO()
+    sf.write(_b, clip, TTS_SR, format="WAV")
+    rtext = transcribe(_b.getvalue())
+    prompt = build_clone_prompt(clip, rtext)
+    _refclip_cache[name] = prompt
+    print(f"[proto] cached ref clip '{name}' ref_text='{rtext[:60]}...'", flush=True)
+    return prompt
 
 
 def load_custom_voices():
@@ -350,6 +545,21 @@ def synth(text: str, voice_id: str, num_step: int = 16, speed: float = 1.0,
             audios = tts_model.generate(
                 text=text, language="English", instruct=instruct, **common
             )
+    buf = io.BytesIO()
+    sf.write(buf, audios[0], TTS_SR, format="WAV")
+    return buf.getvalue()
+
+
+def synth_with_prompt(text: str, clone_prompt, num_step: int = 16, speed: float = 1.0,
+                      guidance_scale: float = 2.0, class_temperature: float = 0.0) -> bytes:
+    """Synthesize with an ad-hoc clone prompt (e.g. an uploaded wav not registered as a voice).
+    Used by the prototype's ad-hoc wav+stt path so you can audition any clip without saving it."""
+    common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
+                  class_temperature=class_temperature)
+    with gpu_lock:
+        audios = tts_model.generate(
+            text=text, language="English", voice_clone_prompt=clone_prompt, **common
+        )
     buf = io.BytesIO()
     sf.write(buf, audios[0], TTS_SR, format="WAV")
     return buf.getvalue()
@@ -443,10 +653,249 @@ def preview(voice: str = DEFAULT_VOICE, speed: float = 1.0, guidance: float = 2.
                     headers={"Cache-Control": "no-store"})
 
 
+@app.post("/api/prototype/speak")
+def prototype_speak(
+    text: str = Form(...),
+    personality: str = Form(DEFAULT_PERSONALITY),
+    strength: str = Form("full"),           # none | light | full
+    voice: str = Form(DEFAULT_VOICE),        # preset id or saved custom id (ignored if wav uploaded)
+    ref_text: str = Form(""),                # transcript for an uploaded wav (skips STT if given)
+    speed: float = Form(1.0),
+    guidance: float = Form(2.0),
+    temperature: float = Form(0.0),
+    steps: int = Form(32),
+    wav: UploadFile = File(None),            # optional ad-hoc reference clip (e.g. kim-huat.wav)
+    ref_clip: str = Form(""),                # OR a built-in working/ clip name (iPad-friendly, no upload)
+):
+    """Pull-side prototype: reword `text` in a personality (strength none/light/full),
+    then speak it in the chosen voice. Voice can be a preset, a saved custom voice, or an
+    ad-hoc uploaded wav (with ref_text, else auto-STT). Returns audio; the reworded text +
+    metadata ride in response headers so the test form can show what was actually said.
+
+    This is the experiment surface for: verbatim vs. reword  x  voice/accent  x  personality.
+    """
+    src = (text or "").strip()
+    if not src:
+        return JSONResponse({"error": "empty_text"}, status_code=400)
+    if strength not in ("none", "light", "full"):
+        strength = "full"
+
+    # 1) TRANSFORM (pull-side): reword the agent's words in-character.
+    try:
+        spoken = reword(src, personality, strength)
+    except Exception as e:  # noqa: BLE001 — ollama down etc.; fall back to verbatim
+        return JSONResponse({"error": "reword_failed", "detail": str(e)}, status_code=503)
+
+    sp, gd, tp, st = clamp_tuning(speed, guidance, temperature, steps)
+
+    # 2) VOICE: built-in working/ clip (ref_clip), else ad-hoc uploaded clip, else
+    #    a registered preset/custom id.
+    try:
+        if ref_clip:
+            prompt = ref_clip_prompt(ref_clip)
+            if prompt is None:
+                return JSONResponse({"error": "unknown_ref_clip", "clip": ref_clip}, status_code=404)
+            audio = synth_with_prompt(spoken, prompt, num_step=st, speed=sp,
+                                      guidance_scale=gd, class_temperature=tp)
+            used_voice = f"clip:{os.path.basename(ref_clip)}"
+        elif wav is not None:
+            raw = wav.file.read()
+            if not raw:
+                return JSONResponse({"error": "empty_wav"}, status_code=400)
+            clip = decode_audio_to_wave(raw)
+            if clip is None:
+                return JSONResponse({"error": "decode_failed"}, status_code=400)
+            clip = trim_edges(clip)
+            rtext = (ref_text or "").strip()
+            if not rtext:
+                _b = io.BytesIO()
+                sf.write(_b, clip, TTS_SR, format="WAV")
+                rtext = transcribe(_b.getvalue())
+            prompt = build_clone_prompt(clip, rtext)
+            audio = synth_with_prompt(spoken, prompt, num_step=st, speed=sp,
+                                      guidance_scale=gd, class_temperature=tp)
+            used_voice = "adhoc-wav"
+        else:
+            with custom_lock:
+                is_custom = voice in custom_prompts
+            if voice not in VOICE_BY_ID and not is_custom:
+                voice = DEFAULT_VOICE
+            audio = synth(spoken, voice, num_step=st, speed=sp,
+                          guidance_scale=gd, class_temperature=tp)
+            used_voice = voice
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "synth_failed", "detail": str(e)}, status_code=500)
+
+    # Reworded text in a header (URL-encoded; headers must be latin-1 safe).
+    return Response(content=audio, media_type="audio/wav", headers={
+        "Cache-Control": "no-store",
+        "x-spoken-text": urllib.parse.quote(spoken),
+        "x-source-text": urllib.parse.quote(src),
+        "x-personality": personality,
+        "x-strength": strength,
+        "x-voice": used_voice,
+    })
+
+
+@app.get("/api/prototype/refclips")
+def prototype_refclips():
+    """Built-in reference clips (working/ wavs) the prototype page can pick without uploading."""
+    return {"clips": list_ref_clips()}
+
+
+@app.get("/api/prototype/status_presets")
+def prototype_status_presets():
+    """Pre-written status-report paragraphs to test reword against (plain..technical..long)."""
+    return {"presets": STATUS_PRESETS}
+
+
+@app.get("/api/prototype/prompts")
+def get_prompts():
+    """Current editable prompt blocks (the 2 strength blocks, voice-style, per-character blurbs)."""
+    return current_prompts()
+
+
+@app.post("/api/prototype/prompts")
+def post_prompts(cfg: dict = Body(...)):
+    """Save edited prompts to prompts.json and hot-reload them live (no restart)."""
+    try:
+        save_prompts(cfg)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "save_failed", "detail": str(e)}, status_code=500)
+    return {"ok": True, "saved_to": PROMPTS_PATH}
+
+
+@app.get("/api/prototype/prompt")
+def prototype_prompt(personality: str = DEFAULT_PERSONALITY, strength: str = "full"):
+    """Expose the EXACT reword prompt assembly for a given character + strength, so the
+    prototype page can show how the system prompt comes together (transparency, not a guess).
+
+    Mirrors reword() exactly:
+        none  -> NO llm call; text is spoken verbatim (no prompt at all).
+        else  -> system = CHARACTER + ' ' + STRENGTH + VOICE_STYLE ; user = the text.
+    """
+    persona = PERSONALITY_BY_ID.get(personality, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
+    if strength == "none":
+        return {
+            "strength": "none",
+            "calls_llm": False,
+            "note": "strength=none: no LLM call is made. The text is spoken VERBATIM.",
+            "components": [],
+            "system_prompt": None,
+            "model": OLLAMA_MODEL,
+        }
+    strength_text = REWORD_STRENGTH.get(strength, REWORD_STRENGTH["full"])
+    system = persona["system"] + " " + strength_text + VOICE_STYLE
+    return {
+        "strength": strength,
+        "calls_llm": True,
+        "model": OLLAMA_MODEL,
+        "components": [
+            {"label": "CHARACTER", "source": "PERSONALITY_BY_ID[id]['system']", "text": persona["system"]},
+            {"label": "STRENGTH", "source": f"REWORD_STRENGTH['{strength}']", "text": strength_text},
+            {"label": "VOICE_STYLE", "source": "VOICE_STYLE (always appended)", "text": VOICE_STYLE.strip()},
+        ],
+        "assembly": "system = CHARACTER + ' ' + STRENGTH + VOICE_STYLE   |   user = <the text>",
+        "system_prompt": system,
+    }
+
+
+@app.post("/synthesize_ref")
+def synthesize_ref(
+    text: str = Form(...),                    # the line to speak
+    ref_text: str = Form(""),                 # transcript of the ref clip (auto-STT if omitted)
+    speed: float = Form(1.0),
+    guidance: float = Form(2.0),
+    temperature: float = Form(0.0),
+    steps: int = Form(32),
+    wav: UploadFile = File(...),              # the reference clip (a voice's ref.wav)
+):
+    """Ad-hoc reference synth — the CLEAN player contract for consumers (asset-library, etc.).
+
+    Hand OmniVoice a reference clip + its transcript + a line to speak; get WAV bytes back.
+    Stateless: nothing is stored, no registration, no cache key. This is the (a)/(b) playback
+    path from the voice-library rundoc — "test a clip" and "audition a registered voice" both
+    POST the voice's ref.wav + ref_text here. The CONSUMER routes the returned bytes (e.g. a
+    browser <audio> element); OmniVoice never plays audio or knows a "target".
+
+    multipart form:
+        wav        (file, required)  reference clip (any format PyAV decodes; mono ~3-15s ideal)
+        text       (required)        the line to synthesize in that voice
+        ref_text   (optional)        transcript of the clip; auto-transcribed if omitted
+        speed/guidance/temperature/steps (optional) tuning, clamped to safe ranges
+    returns: audio/wav bytes, header x-synth-device.
+    """
+    line = (text or "").strip()
+    if not line:
+        return JSONResponse({"error": "empty_text"}, status_code=400)
+    raw = wav.file.read()
+    if not raw:
+        return JSONResponse({"error": "empty_wav"}, status_code=400)
+    try:
+        clip = decode_audio_to_wave(raw)
+        if clip is None:
+            return JSONResponse({"error": "decode_failed"}, status_code=400)
+        clip = trim_edges(clip)
+        rtext = (ref_text or "").strip()
+        if not rtext:
+            _b = io.BytesIO()
+            sf.write(_b, clip, TTS_SR, format="WAV")
+            rtext = transcribe(_b.getvalue())
+        sp, gd, tp, st = clamp_tuning(speed, guidance, temperature, steps)
+        prompt = build_clone_prompt(clip, rtext)
+        audio = synth_with_prompt(line[:2000], prompt, num_step=st, speed=sp,
+                                  guidance_scale=gd, class_temperature=tp)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "synth_failed", "detail": str(e)}, status_code=500)
+    return Response(content=audio, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store", "x-synth-device": "cuda:omnivoice"})
+
+
+@app.post("/synthesize")
+def synthesize(payload: dict = Body(...)):
+    """neutts-compatible TTS endpoint so the speak MCP (agent-speech-relay) can treat
+    voice-to-voice as a drop-in synth tier (engine=omnivoice).
+
+    Contract mirrors neutts-synth's POST /synthesize: JSON in, raw WAV bytes out.
+    Body: {text, voice?, speed?, guidance?, temperature?, steps?}. `voice` is an
+    OmniVoice voice id (preset like 'f_us' or a saved custom voice); unknown/absent
+    falls back to DEFAULT_VOICE so a bad voice name never fails the speak path.
+    The x-synth-device header lets the relay log which device rendered it.
+    """
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": "empty_text"}, status_code=400)
+    voice = payload.get("voice") or DEFAULT_VOICE
+    with custom_lock:
+        is_custom = voice in custom_prompts
+    if voice not in VOICE_BY_ID and not is_custom:
+        voice = DEFAULT_VOICE  # tolerate unknown voice names from the relay
+    # Optional generation tuning, clamped to safe ranges (same as /api/preview).
+    sp, gd, tp, st = clamp_tuning(
+        float(payload.get("speed", 1.0)),
+        float(payload.get("guidance", 2.0)),
+        float(payload.get("temperature", 0.0)),
+        int(payload.get("steps", 32)),
+    )
+    wav = synth(text[:2000], voice, num_step=st, speed=sp,
+                guidance_scale=gd, class_temperature=tp)
+    return Response(content=wav, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store",
+                             "x-synth-device": f"cuda:omnivoice"})
+
+
 @app.get("/health")
 def health_probe():
-    """Lightweight liveness probe for harbor supervision (mirrors neutts /health)."""
-    return {"ok": True, "service": "voice-to-voice", "engine": "omnivoice", "tts_sr": TTS_SR}
+    """Lightweight liveness probe for harbor supervision (mirrors neutts /health).
+
+    `loaded` + `voices` are present so the speak MCP's synthViaTier() health gate
+    (which requires `loaded` truthy) accepts this service as a synth tier.
+    """
+    with custom_lock:
+        voice_ids = [v["id"] for v in VOICES] + list(custom_prompts.keys())
+    return {"ok": True, "loaded": True, "service": "voice-to-voice",
+            "engine": "omnivoice", "device": "cuda:omnivoice",
+            "tts_sr": TTS_SR, "voices": voice_ids}
 
 
 @app.get("/api/health")
@@ -585,6 +1034,6 @@ app.mount("/", StaticFiles(directory=os.path.join(HERE, "static")), name="static
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", "8123"))
+    port = int(os.environ.get("PORT", "8221"))
     print(f"[init] serving on 0.0.0.0:{port}", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
