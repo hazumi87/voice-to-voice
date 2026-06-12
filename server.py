@@ -15,6 +15,7 @@ All three legs run locally on the VRPC:
 Production note: this is a prove-it prototype. Nothing here is harbor-supervised
 and it touches no production service (neutts :8220, agent-speech-relay).
 """
+import contextlib
 import io
 import os
 import re
@@ -201,13 +202,27 @@ PREVIEW_TEXT = "Hi! This is how I sound. I'm ready to chat whenever you are."
 # ---------------------------------------------------------------------------
 # Model loading (once, at startup)
 # ---------------------------------------------------------------------------
-print("[init] loading faster-whisper (base.en, cuda/float16) ...", flush=True)
+# STT runs on CPU/int8 by DEFAULT - deliberately off the GPU. The GPU Whisper
+# (cuda/float16) is the instance that has hung this service: a CUDA stall or
+# OOM-that-hangs under the shared gpu_lock would take TTS down with it. The
+# asset-library proves base/int8 on CPU is rock-solid, and the VRPC CPU handles
+# base.en/int8 for short utterances in well under a second - fast enough for the
+# live iPad loop. Keeping STT off the GPU also means it no longer contends with
+# OmniVoice for gpu_lock: STT (CPU) and TTS (GPU) run in parallel.
+# Set STT_DEVICE_PREF=cuda to force the GPU build back (A/B only).
+_stt_pref = os.environ.get("STT_DEVICE_PREF", "cpu").lower()
 from faster_whisper import WhisperModel
-try:
-    stt_model = WhisperModel("base.en", device="cuda", compute_type="float16")
-    STT_DEVICE = "cuda/float16"
-except Exception as e:  # noqa: BLE001
-    print(f"[init] cuda STT failed ({e}); falling back to CPU int8", flush=True)
+if _stt_pref == "cuda":
+    print("[init] loading faster-whisper (base.en, cuda/float16) [forced] ...", flush=True)
+    try:
+        stt_model = WhisperModel("base.en", device="cuda", compute_type="float16")
+        STT_DEVICE = "cuda/float16"
+    except Exception as e:  # noqa: BLE001
+        print(f"[init] cuda STT failed ({e}); falling back to CPU int8", flush=True)
+        stt_model = WhisperModel("base.en", device="cpu", compute_type="int8")
+        STT_DEVICE = "cpu/int8"
+else:
+    print("[init] loading faster-whisper (base.en, cpu/int8) ...", flush=True)
     stt_model = WhisperModel("base.en", device="cpu", compute_type="int8")
     STT_DEVICE = "cpu/int8"
 print(f"[init] STT ready on {STT_DEVICE}", flush=True)
@@ -226,7 +241,71 @@ custom_prompts = {}    # id -> OmniVoice VoiceClonePrompt
 custom_lock = threading.Lock()
 
 # Single GPU lock - serialize STT/TTS inference (single-user prototype).
+# Serializing GPU work is correct: one GPU + non-reentrant model state means two
+# concurrent generate()/transcribe() calls would corrupt output or crash, not run
+# faster. The DANGER is an op that HANGS while holding the lock (we've seen Whisper
+# wedge) - it would block every later request forever and take the whole service
+# dark. gpu_guard() is the insurance: a bounded acquire (503 instead of infinite
+# wait) plus a watchdog that NAMES the in-flight op and warns if it runs long, so
+# the next hang diagnoses itself instead of being another mystery restart.
 gpu_lock = threading.Lock()
+
+# STT now runs on CPU (see STT load below), so it must NOT share gpu_lock with TTS -
+# that would serialize CPU STT behind GPU TTS for no reason. Its own lock keeps STT
+# single-flight (faster-whisper isn't reentrant) while letting it run in parallel
+# with OmniVoice on the GPU.
+stt_lock = threading.Lock()
+
+GPU_ACQUIRE_TIMEOUT_S = float(os.environ.get("GPU_ACQUIRE_TIMEOUT_S", "45"))  # max wait for the lock
+GPU_WATCHDOG_WARN_S = float(os.environ.get("GPU_WATCHDOG_WARN_S", "20"))      # warn if an op runs past this
+_gpu_inflight = {"op": None, "since": 0.0}  # what currently holds the lock (for /health + logs)
+
+
+class GpuBusy(Exception):
+    """The GPU lock could not be acquired within GPU_ACQUIRE_TIMEOUT_S."""
+
+
+@contextlib.contextmanager
+def gpu_guard(op: str):
+    """Acquire gpu_lock with a timeout + a watchdog that logs slow/hung GPU ops.
+
+    - Bounded acquire: if another op holds the GPU past GPU_ACQUIRE_TIMEOUT_S, raise
+      GpuBusy (caller returns 503) instead of blocking this worker forever.
+    - Watchdog: a daemon timer fires at GPU_WATCHDOG_WARN_S and logs WHICH op is
+      still running and for how long. Repeats so a true hang leaves a clear trail.
+    - Records the in-flight op so /health can report it without touching gpu_lock.
+    """
+    if not gpu_lock.acquire(timeout=GPU_ACQUIRE_TIMEOUT_S):
+        held = _gpu_inflight["op"]
+        held_for = (time.time() - _gpu_inflight["since"]) if _gpu_inflight["since"] else 0.0
+        print(f"[gpu] BUSY: '{op}' waited {GPU_ACQUIRE_TIMEOUT_S:.0f}s; "
+              f"'{held}' has held the GPU for {held_for:.0f}s", flush=True)
+        raise GpuBusy(f"gpu busy: '{held}' in-flight {held_for:.0f}s")
+
+    start = time.time()
+    _gpu_inflight["op"] = op
+    _gpu_inflight["since"] = start
+    stop_watchdog = threading.Event()
+
+    def _watch():
+        n = 0
+        while not stop_watchdog.wait(GPU_WATCHDOG_WARN_S):
+            n += 1
+            print(f"[gpu] SLOW: '{op}' still running after "
+                  f"{time.time() - start:.0f}s (warn #{n})", flush=True)
+
+    wd = threading.Thread(target=_watch, name=f"gpu-watchdog:{op}", daemon=True)
+    wd.start()
+    try:
+        yield
+    finally:
+        stop_watchdog.set()
+        dur = time.time() - start
+        _gpu_inflight["op"] = None
+        _gpu_inflight["since"] = 0.0
+        gpu_lock.release()
+        if dur >= GPU_WATCHDOG_WARN_S:
+            print(f"[gpu] done '{op}' in {dur:.1f}s", flush=True)
 # In-memory conversation history (single session prototype).
 history = []
 history_lock = threading.Lock()
@@ -245,12 +324,22 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(GpuBusy)
+def _gpu_busy_handler(request: Request, exc: GpuBusy):
+    # A GPU op held the lock past GPU_ACQUIRE_TIMEOUT_S. Return 503 (retryable) so
+    # one slow/stuck op no longer cascades into a total outage - the worker is freed
+    # and the service keeps answering. The speak relay treats a non-200 as "tier
+    # unreachable" and falls back to browser, which is the right graceful degrade.
+    return JSONResponse({"error": "gpu_busy", "detail": str(exc)}, status_code=503)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def transcribe(audio_bytes: bytes) -> str:
-    """faster-whisper decodes mp4/AAC/webm/wav directly via bundled PyAV."""
-    with gpu_lock:
+    """faster-whisper decodes mp4/AAC/webm/wav directly via bundled PyAV.
+    Runs on CPU (default) under stt_lock - off the GPU lock, parallel to TTS."""
+    with stt_lock:
         segments, _info = stt_model.transcribe(
             io.BytesIO(audio_bytes), language="en", beam_size=1
         )
@@ -434,7 +523,7 @@ def trim_edges(wav, lead_s: float = 0.12, trail_s: float = 0.40, fade_s: float =
 
 def build_clone_prompt(wav_np, ref_text: str):
     """Encode a reference clip into a reusable OmniVoice voice-clone prompt (GPU)."""
-    with gpu_lock:
+    with gpu_guard("tts.create_clone_prompt"):
         return tts_model.create_voice_clone_prompt(
             ref_audio=(wav_np, TTS_SR), ref_text=ref_text, preprocess_prompt=True
         )
@@ -515,7 +604,7 @@ def select_clone_window(raw: bytes):
     if wav is None:
         return None, ""
     total_s = len(wav) / TTS_SR
-    with gpu_lock:
+    with stt_lock:  # CPU STT, off the GPU lock (see transcribe())
         segments, _ = stt_model.transcribe(io.BytesIO(raw), language="en", beam_size=1)
         segs = [(float(s.start), float(s.end), s.text.strip()) for s in segments]
     if not segs:
@@ -547,7 +636,7 @@ def synth(text: str, voice_id: str, num_step: int = 16, speed: float = 1.0,
         clone = custom_prompts.get(voice_id)
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
                   class_temperature=class_temperature)
-    with gpu_lock:
+    with gpu_guard(f"tts.generate[{voice_id}]"):
         if clone is not None:
             audios = tts_model.generate(
                 text=text, language="English", voice_clone_prompt=clone, **common
@@ -568,7 +657,7 @@ def synth_with_prompt(text: str, clone_prompt, num_step: int = 16, speed: float 
     Used by the prototype's ad-hoc wav+stt path so you can audition any clip without saving it."""
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
                   class_temperature=class_temperature)
-    with gpu_lock:
+    with gpu_guard("tts.generate.adhoc_prompt"):
         audios = tts_model.generate(
             text=text, language="English", voice_clone_prompt=clone_prompt, **common
         )
@@ -622,6 +711,63 @@ def add_custom_voice(audio: UploadFile = File(...), name: str = Form(...)):
         custom_prompts[vid] = prompt
     print(f"[custom] added voice '{label}' ({vid}) ref_text='{ref_text}'", flush=True)
     return {"voice": entry, "ref_text": ref_text}
+
+
+@app.post("/api/voices/register")
+def register_custom_voice(
+    audio: UploadFile = File(...),
+    name: str = Form(...),
+    ref_text: str = Form(...),
+    voice_id: str = Form(None),
+):
+    """Register a custom voice from a PRE-TRANSCODED clip + a SUPPLIED transcript.
+
+    This is the library-sourced path: the asset-library already transcodes the WAV
+    and stores the ref_text, so we skip Whisper entirely. That matters - the STT step
+    is the one that has hung the GPU; bypassing it removes that failure mode for
+    library voices. The only GPU work here is build_clone_prompt (guarded).
+
+    Pass voice_id to make registration idempotent/replaceable (re-registering the
+    same id overwrites cleanly). Omit it to mint one from the label.
+    """
+    raw = audio.file.read()
+    if not raw:
+        return JSONResponse({"error": "empty audio"}, status_code=400)
+    label = (name or "").strip()[:40] or "Custom Voice"
+    ref_text = (ref_text or "").strip()
+    if not ref_text:
+        return JSONResponse({"error": "no_ref_text",
+                             "detail": "ref_text is required for the no-STT register path."}, status_code=422)
+
+    # Decode the (already clean) clip via PyAV -> mono float32 @ TTS_SR. No Whisper.
+    try:
+        wav = decode_audio_to_wave(raw)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "decode_failed", "detail": str(e)}, status_code=400)
+    if wav is None or len(wav) < int(TTS_SR * 0.8):
+        return JSONResponse({"error": "too_short",
+                             "detail": "Clip too short - aim for at least a sentence."}, status_code=422)
+    # Library clips are pre-trimmed, but a light edge fade is cheap insurance against
+    # a residual start/stop transient leaking into the cloned voice.
+    wav = trim_edges(wav, lead_s=0.04, trail_s=0.04, fade_s=0.02)
+
+    vid = (voice_id or "").strip() or (
+        "cust_" + (re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:24] or "voice")
+        + "_" + str(int(time.time()))
+    )
+    sf.write(os.path.join(CUSTOM_DIR, vid + ".wav"), wav, TTS_SR)
+    with open(os.path.join(CUSTOM_DIR, vid + ".json"), "w", encoding="utf-8") as f:
+        json.dump({"id": vid, "label": label, "ref_text": ref_text}, f)
+
+    prompt = build_clone_prompt(wav, ref_text)  # guarded GPU op
+    entry = {"id": vid, "label": label, "tags": "Custom", "custom": True}
+    with custom_lock:
+        # Replace any existing entry with the same id (idempotent re-register).
+        custom_voices[:] = [v for v in custom_voices if v["id"] != vid]
+        custom_voices.append(entry)
+        custom_prompts[vid] = prompt
+    print(f"[custom] registered (no-STT) '{label}' ({vid}) ref_text='{ref_text[:60]}'", flush=True)
+    return {"voice": entry, "ref_text": ref_text, "skipped_stt": True}
 
 
 @app.post("/api/voices/custom_delete")
@@ -905,9 +1051,16 @@ def health_probe():
     """
     with custom_lock:
         voice_ids = [v["id"] for v in VOICES] + list(custom_prompts.keys())
+    # Report the in-flight GPU op (if any) so a slow/hung op is visible from harbor
+    # and the speak relay without having to read the logs. Never touches gpu_lock.
+    inflight = _gpu_inflight["op"]
+    gpu = {"busy": inflight is not None}
+    if inflight is not None:
+        gpu["op"] = inflight
+        gpu["held_s"] = round(time.time() - _gpu_inflight["since"], 1)
     return {"ok": True, "loaded": True, "service": "voice-to-voice",
             "engine": "omnivoice", "device": "cuda:omnivoice",
-            "tts_sr": TTS_SR, "voices": voice_ids}
+            "tts_sr": TTS_SR, "voices": voice_ids, "gpu": gpu}
 
 
 @app.get("/api/health")
