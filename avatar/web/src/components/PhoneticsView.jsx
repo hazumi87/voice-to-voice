@@ -9,8 +9,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-const TIMELINE_URL = '/data/full_stella_timeline.json';
-const VISEME_MAP_URL = '/data/viseme_map.json';
+// public/ is served under Vite's base (BASE_URL = '/avatar/' in the built app);
+// absolute '/data/...' would 404 under the /avatar/ mount.
+const BASE = import.meta.env.BASE_URL;
+const TIMELINE_URL = `${BASE}data/full_stella_timeline.json`;
+const VISEME_MAP_URL = `${BASE}data/viseme_map.json`;
 
 // Distinct colour per viseme id (10 = rest is muted grey).
 const VISEME_COLOR = {

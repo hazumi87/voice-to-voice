@@ -19,11 +19,14 @@ import MouthStage from './MouthStage.jsx';
 const STAGE_W = 640;
 const STAGE_H = 480;
 
-// Where data + (optional) audio live. public/ is served at root by Vite.
-const TIMELINE_URL = '/data/full_stella_timeline.json';
-const VISEME_MAP_URL = '/data/viseme_map.json';
+// Where data + (optional) audio live. public/ is served under Vite's base
+// (BASE_URL = '/avatar/' in the built app), so all asset paths MUST be prefixed
+// with it — absolute '/data/...' would 404 under the /avatar/ mount.
+const BASE = import.meta.env.BASE_URL;
+const TIMELINE_URL = `${BASE}data/full_stella_timeline.json`;
+const VISEME_MAP_URL = `${BASE}data/viseme_map.json`;
 // Optional audio. If this 404s, the clock falls back to a virtual timer.
-const AUDIO_URL = '/audio/full_stella.wav';
+const AUDIO_URL = `${BASE}audio/full_stella.wav`;
 
 // Numbered scheme "blair-10-numbered". rendered_set = 9 distinct sprites
 // (id 7 W/Q aliases id 6 and is not rendered). 10 = rest / closed mouth.
@@ -64,7 +67,7 @@ export default function VisemePlayer() {
         const entries = await Promise.all(
           VISEME_IDS.map(async (id) => {
             const sprite = mapJson.visemes[id]?.sprite;
-            const url = `/sprites/${sprite}`;
+            const url = `${BASE}sprites/${sprite}`;
             const tex = await Assets.load(url);
             return [id, tex];
           }),

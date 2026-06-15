@@ -86,6 +86,16 @@ over ONE static face — true locked-camera lip-sync, but mouth art style differ
 - Nav tab **Lip-Sync ▸** added to index.html / prototype.html / talkback.html -> `/avatar/`.
 - After any avatar code change: `cd avatar/web && npm run build`, then restart voice-to-voice (harbor MCP) to reserve the new dist. `npm run dev` (:5173) still works for live dev.
 
+## BUG FIXED — base-path 404s broke BOTH views (2026-06-15)
+**Symptom:** site up at `/avatar/` but blank/broken; server logs showed `GET /data/*.json`,
+`/audio/*.wav`, `/sprites/*.png` -> **404** (requested at ROOT, not under `/avatar/`).
+**Cause:** `VisemePlayer.jsx` + `PhoneticsView.jsx` hard-coded absolute asset URLs
+(`/data/...`, `/audio/...`, `/sprites/...`). Under the Vite `base:'/avatar/'` mount, public/
+serves at `/avatar/...`, so every fetch 404'd and both views died on load.
+**Fix:** prefix all asset paths with `import.meta.env.BASE_URL` (= `/avatar/` in build, `/` in
+dev). Verified: all 14 assets 200, timeline/map shapes correct, all 9 sprites resolve, node
+smoke test PASS. Both Lip-Sync + Phonetics views load. `dist/` is gitignored — rebuild after clone.
+
 ## GEMINI MANUAL POSES — COMPLETE SET IN HAND (working/manual_gemini/)
 Eric generated poses in Gemini web. Filenames = the SOUND spoken (pose_A = "ah", NOT viseme A).
 Coverage verified — ALL 10 grid shapes covered, NOTHING more to generate:
