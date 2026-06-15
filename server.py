@@ -243,12 +243,34 @@ _tts_load_error = None
 _tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
 
 
+TTS_MIN_FREE_VRAM_GB = 9.0   # OmniVoice resident ~8GB; require headroom before loading
+
+
+def _free_vram_gb():
+    """Free GPU VRAM in GB via torch (no subprocess). None if unavailable."""
+    try:
+        free, _total = torch.cuda.mem_get_info()
+        return free / (1024 ** 3)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _load_tts_model():
-    """Attempt to load OmniVoice onto the GPU. Returns True on success, False on failure.
-    NEVER raises — a failure must not crash startup (see crash-loop note above)."""
+    """Attempt to load OmniVoice onto the GPU. Returns True on success, False otherwise.
+    NEVER lets the process die: a CUDA OOM during from_pretrained can be a HARD abort
+    (not a catchable Python exception), so we GATE on free VRAM first and simply refuse
+    to attempt the load when there isn't enough headroom — that's what prevents the
+    crash-loop, not a try/except. The server runs fine without TTS (avatar/STT/chat
+    don't need it); synth routes 503 until VRAM frees and a later call loads it."""
     global tts_model, TTS_SR, _tts_load_error
     if tts_model is not None:
         return True
+    free = _free_vram_gb()
+    if free is not None and free < TTS_MIN_FREE_VRAM_GB:
+        _tts_load_error = (f"insufficient VRAM: {free:.1f}GB free < {TTS_MIN_FREE_VRAM_GB}GB needed "
+                           f"(free VRAM, e.g. unload Ollama, then retry)")
+        print(f"[tts] load skipped — {_tts_load_error}", flush=True)
+        return False
     try:
         m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda", dtype=torch.float16)
         tts_model = m
@@ -256,13 +278,21 @@ def _load_tts_model():
         _tts_load_error = None
         print(f"[init] TTS ready, sr={TTS_SR}", flush=True)
         return True
-    except Exception as e:  # noqa: BLE001 — usually CUDA OOM under VRAM contention
+    except Exception as e:  # noqa: BLE001
         _tts_load_error = str(e)
-        print(f"[init] OmniVoice load FAILED (non-fatal, retries on demand): {e}", flush=True)
+        print(f"[tts] OmniVoice load failed: {e}", flush=True)
         return False
 
 
-_load_tts_model()  # best-effort at startup; the server starts regardless
+# DEFERRED by default: do NOT load OmniVoice at import time. Loading it at startup meant a
+# VRAM OOM there crashed the process -> harbor restart-loop -> whole site (incl. /avatar) down.
+# The avatar + phonetics prototypes read only stored data and need no GPU at all, so the server
+# must always start clean. TTS loads lazily on the first synth via ensure_tts(). Set EAGER_TTS=1
+# to restore startup loading (only safe when VRAM is known-free).
+if os.environ.get("EAGER_TTS") == "1":
+    _load_tts_model()
+else:
+    print("[init] OmniVoice load DEFERRED (lazy on first synth); server starts GPU-free", flush=True)
 
 # Custom (cloned) voices: saved to disk so they survive restarts.
 CUSTOM_DIR = os.path.join(HERE, "custom_voices")
