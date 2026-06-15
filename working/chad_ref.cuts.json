@@ -1,0 +1,31 @@
+{
+  "voice_id": "cust_slowchad",
+  "label": "Slow Chad",
+  "character": "slow_chad",
+  "source_clip": "working/Spicoli_SlowChad",
+  "source_format": "WAV PCM_16 24000Hz mono 27.61s",
+  "minted": "2026-06-15",
+  "ref_text": "I'm registered in this class. This is U.S. History. Sorry I'm late. It's just like this new schedule is totally confusing. Yeah, I know that dude.",
+  "cuts_seconds": [
+    [
+      1.09,
+      2.6
+    ],
+    [
+      3.88,
+      5.25
+    ],
+    [
+      18.92,
+      22.88
+    ],
+    [
+      25.98,
+      27.58
+    ]
+  ],
+  "gap_silence_s": 0.2,
+  "edge_fade_s": 0.025,
+  "total_s": 9.04,
+  "notes": "Energy-boundary cuts (whisper word-ends ran early). Dropped leading 'Yeah' (L1) to avoid baking a yeah-pattern; dropped paper tap before 'Sorry' (L4 start 18.92). Residual faint paper taps accepted as good-enough. Hiss not filtered. Reproduce: slice source at cuts_seconds, 25ms edge fades, 0.20s silence between, write PCM_16."
+}

@@ -7,6 +7,7 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
+  .hidden { display: none !important; }
   body {
     margin: 0; font-family: -apple-system, system-ui, sans-serif;
     background: #0e1116; color: #e6edf3; padding: 20px;
@@ -62,6 +63,8 @@
   <div style="display:flex;gap:8px;margin-bottom:12px">
     <a href="/" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">◂ App</a>
     <a href="/prototype.html" style="padding:7px 14px;border-radius:8px;background:#1f6feb;color:#fff;text-decoration:none;font-size:13px;font-weight:600">Prototype</a>
+    <a href="/talkback.html" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">Talk-back ▸</a>
+    <a href="/avatar/" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">Lip-Sync ▸</a>
   </div>
   <h1>Voice Prototype</h1>
   <p class="sub">Test the pull-side: <b>reword</b> (none / light / full) × <b>voice/accent</b> × <b>personality</b>. The agent's words go in; the personality rewords them (or not); OmniVoice speaks it.</p>
@@ -79,6 +82,13 @@
     </select>
     <label>Text to speak (the agent's words)</label>
     <textarea id="text">Where we landed — the seam itself is done. Aurora accepted the whole event and command surface, and I ratified their answers.</textarea>
+
+    <div style="margin-top:14px">
+      <label>Character (sets voice + personality + strength)</label>
+      <select id="character">
+        <option value="">— custom (pick manually) —</option>
+      </select>
+    </div>
 
     <div class="row" style="margin-top:14px">
       <div>
@@ -141,6 +151,8 @@
       <div class="spoken" id="spoken"><span class="muted">— nothing yet —</span></div>
       <div class="meta" id="meta"></div>
       <audio id="player" controls></audio>
+      <a id="downloadReply" class="hidden" download
+         style="display:inline-block;margin-top:8px;font-size:13px;text-decoration:none;padding:6px 10px;border:1px solid #888;border-radius:6px;color:inherit">&#11015; Download reply</a>
     </div>
   </div>
 
@@ -174,6 +186,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
+let lastReplyUrl = null; // kept alive so the most recent reply stays downloadable
 let strength = "none";
 
 const HINTS = {
@@ -223,8 +236,29 @@ async function loadOptions() {
       ss.appendChild(opt);
     });
   } catch (e) {}
+  try {
+    const ch = await (await fetch("/api/characters")).json();
+    const cs = $("#character");
+    (ch.characters || []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.id; opt.textContent = o.label;
+      opt._char = o;             // stash the bundle so the change handler can apply it
+      cs.appendChild(opt);
+    });
+  } catch (e) {}
 }
 loadOptions().then(refreshAnatomy);
+
+// Character bundle: set voice + personality + strength in one move.
+$("#character").addEventListener("change", e => {
+  const opt = e.target.selectedOptions[0];
+  const c = opt && opt._char;
+  if (!c) return;
+  if (c.voice) { $("#voice").value = c.voice; }
+  if (c.personality) { $("#personality").value = c.personality; }
+  if (c.strength) { setStrength(c.strength); }
+  refreshAnatomy();
+});
 
 // Status preset -> fills (still editable) text box.
 $("#statusPreset").addEventListener("change", e => {
@@ -319,11 +353,16 @@ $("#savePrompts").addEventListener("click", async () => {
   }
 });
 
+function setStrength(v) {
+  if (!HINTS[v]) return;
+  strength = v;
+  [...$("#strength").children].forEach(x => x.classList.toggle("on", x.dataset.v === v));
+  $("#strengthHint").textContent = HINTS[v];
+}
+
 $("#strength").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  strength = b.dataset.v;
-  [...$("#strength").children].forEach(x => x.classList.toggle("on", x === b));
-  $("#strengthHint").textContent = HINTS[strength];
+  setStrength(b.dataset.v);
   refreshAnatomy();
 });
 
@@ -374,9 +413,14 @@ $("#go").addEventListener("click", async () => {
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
     $("#spoken").textContent = spoken || text;
     $("#meta").textContent = `voice=${usedVoice} · strength=${strength} · ${dt}s · ${(blob.size/1024|0)} KB`;
-    const url = URL.createObjectURL(blob);
-    pl.muted = false; pl.src = url; pl.load();
+    if (lastReplyUrl) { URL.revokeObjectURL(lastReplyUrl); }
+    lastReplyUrl = URL.createObjectURL(blob);
+    pl.muted = false; pl.src = lastReplyUrl; pl.load();
     pl.play().catch(()=>{ /* iOS may still gate; controls are visible to tap play */ });
+    const dl = $("#downloadReply");
+    dl.href = lastReplyUrl;
+    dl.download = `reply-${new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)}.wav`;
+    dl.classList.remove("hidden");
   } catch (e) {
     const msg = e.name === "AbortError" ? "Timed out (120s) — model may be busy. Try again." : String(e.message || e);
     $("#err").textContent = msg;

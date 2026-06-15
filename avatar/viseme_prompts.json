@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "name": "viseme_prompts",
+    "version": "0.1.0",
+    "purpose": "Per-viseme generation briefs for PoC1. One prompt per Rhubarb shape. Generator-agnostic: usable as the edit instruction for local Flux/SD inpaint OR as the Gemini image-edit instruction. Each prompt edits ONLY the mouth region (the mask), preserving the face's identity, lighting, line-art style, and skin tone.",
+    "subject": "working/reference_chat.png",
+    "style_anchor": "clean cel-shaded anime / manga line-art portrait, smooth flat skin shading, crisp black ink outlines, warm soft lighting, friendly young adult man, front-facing. Keep this EXACT rendering style, skin tone, lip color, and outline weight.",
+    "global_constraints": "Edit ONLY the mouth and immediately surrounding lips/chin. Do NOT change the nose, eyes, cheeks, hair, jawline, skin tone, or background. Match the line weight and cel-shading of the source. Mouth must stay centered in the same position. Output the same art style, not a photo."
+  },
+  "prompts": {
+    "A": {
+      "label": "closed - M/B/P",
+      "prompt": "Close the mouth completely. Lips gently pressed together in a neutral relaxed seal, no teeth visible, no smile. A calm closed mouth, lips together, slight natural lip line. Cel-shaded anime line-art, same skin tone and outline weight as the face."
+    },
+    "B": {
+      "label": "slightly open - many consonants",
+      "prompt": "Mouth slightly open, a small narrow gap between the lips, upper and lower teeth nearly touching, just a hint of teeth. Relaxed, neutral expression. Small subtle opening. Cel-shaded anime line-art matching the face."
+    },
+    "C": {
+      "label": "open - EH/AE",
+      "prompt": "Mouth moderately open in a relaxed 'eh' shape, lips parted to a medium oval, top row of teeth visible, a little dark mouth interior below. Natural mid-open mouth. Cel-shaded anime line-art matching the face."
+    },
+    "D": {
+      "label": "wide open - AA/AH",
+      "prompt": "Mouth wide open in an 'ah' shape, a clear rounded-oval opening, upper teeth visible at top, dark open mouth interior, lower lip dropped. An open speaking mouth, not a scream, relaxed and natural. Cel-shaded anime line-art matching the face."
+    },
+    "E": {
+      "label": "rounded slight - AO/ER/UH",
+      "prompt": "Mouth slightly rounded and slightly open, lips softly rounded forming a small 'aw' shape, modest opening, minimal teeth. Gentle rounded mouth. Cel-shaded anime line-art matching the face."
+    },
+    "F": {
+      "label": "puckered - UW/OW/W",
+      "prompt": "Lips puckered and pushed forward into a small rounded 'oo' shape, a small circular opening, lips rounded toward the viewer, minimal teeth. A clear pucker. Cel-shaded anime line-art matching the face."
+    },
+    "G": {
+      "label": "teeth on lip - F/V",
+      "prompt": "Upper front teeth resting lightly on the lower lip, the lower lip tucked slightly under the top teeth, mouth mostly closed, an 'f' or 'v' mouth shape. Top teeth touching lower lip. Cel-shaded anime line-art matching the face."
+    },
+    "H": {
+      "label": "tongue - L",
+      "prompt": "Mouth open in a medium oval with the tip of the tongue raised and lightly touching behind the upper teeth, an 'L' mouth shape, some teeth and a little tongue visible. Cel-shaded anime line-art matching the face."
+    },
+    "X": {
+      "label": "rest / idle",
+      "prompt": "Mouth closed and fully at rest, relaxed neutral resting lips, lips gently together, no smile, no teeth, calm idle expression. The default resting mouth. Cel-shaded anime line-art, same skin tone and outline weight as the face."
+    }
+  }
+}

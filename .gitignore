@@ -11,3 +11,21 @@ server.log
 # Editor / agent local
 .claude/
 prompts.json
+
+# Node / build artifacts (regenerate with `cd avatar/web && npm install && npm run build`)
+node_modules/
+avatar/web/dist/
+
+# Source voice clip (extensionless WAV; *.wav already covers the rest)
+working/Spicoli_SlowChad
+# Runtime render log (regenerates as you test characters)
+working/character_speak.log
+
+# Large binary research/scratch assets — regenerable, not runtime deps.
+# (Global rule: don't commit large binaries; public/ assets deploy separately.)
+working/*.png
+working/manual_gemini/
+working/blair_refs/
+working/rhubarb_refs/
+avatar/poc1/
+avatar/poc1_smiling_archive/

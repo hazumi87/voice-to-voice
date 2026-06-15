@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Talk-back — character builder + consumer test bench</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  .hidden { display: none !important; }
+  body {
+    margin: 0; font-family: -apple-system, system-ui, sans-serif;
+    background: #0e1116; color: #e6edf3; padding: 20px;
+    min-height: 100dvh;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { opacity: .55; font-size: 13px; margin: 0 0 20px; }
+  .card { background: #11161d; border: 1px solid #21262d; border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card-title { font-size: 13px; font-weight: 600; opacity: .7; margin: 0 0 14px; letter-spacing: .4px; text-transform: uppercase; }
+  label { display: block; font-size: 12px; opacity: .65; margin: 0 0 6px; letter-spacing: .3px; }
+  textarea, select, input[type=text] {
+    width: 100%; background: #0e1116; color: #e6edf3; border: 1px solid #2a313b;
+    border-radius: 9px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  textarea { resize: vertical; }
+  input[type=range] { width: 100%; accent-color: #1f6feb; cursor: pointer; }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-val { font-size: 13px; min-width: 36px; text-align: right; opacity: .8; }
+  .field { margin-bottom: 14px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 140px; }
+  .seg { display: flex; gap: 0; border: 1px solid #2a313b; border-radius: 9px; overflow: hidden; }
+  .seg button {
+    flex: 1; background: #0e1116; color: #e6edf3; border: none; padding: 9px 6px;
+    font-size: 13px; cursor: pointer; border-right: 1px solid #2a313b;
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: #1f6feb; color: #fff; }
+  .speak {
+    width: 100%; background: #238636; color: #fff; border: none; border-radius: 10px;
+    padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  .speak:disabled { opacity: .5; cursor: default; }
+  .mic {
+    flex-shrink: 0; background: #1f6feb; color: #fff; border: none; border-radius: 10px;
+    padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .mic.recording { background: #da3633; }
+  .mic:disabled { opacity: .5; cursor: default; }
+  .spoken { background: #0e1116; border: 1px solid #2a313b; border-radius: 9px; padding: 10px 12px;
+            font-size: 14px; min-height: 20px; white-space: pre-wrap; }
+  .meta { font-size: 11px; opacity: .5; margin-top: 6px; }
+  audio { width: 100%; margin-top: 10px; }
+  .muted { opacity: .5; font-size: 12px; }
+  details summary { cursor: pointer; font-size: 12px; opacity: .65; padding: 4px 0; }
+  details[open] summary { margin-bottom: 10px; }
+  .err { color: #f85149; font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .small { font-size: 11px; opacity: .5; margin-top: 4px; }
+  .budget { font-size: 11px; opacity: .55; margin-top: 4px; }
+  .budget.warn { color: #e3b341; opacity: 1; }
+  .budget.over { color: #f85149; opacity: 1; }
+  .save-msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .save-msg.ok { color: #3fb950; }
+  .save-msg.fail { color: #f85149; }
+  .or-divider { text-align:center; font-size:11px; opacity:.4; margin: 4px 0; }
+  .input-row { display: flex; gap: 10px; align-items: flex-start; }
+  .input-row textarea { flex: 1; min-height: 56px; }
+  .transcript { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; max-height: 400px; overflow-y: auto; }
+  .bubble { border-radius: 10px; padding: 10px 14px; font-size: 14px; max-width: 90%; }
+  .bubble.user { background: #1f6feb22; border: 1px solid #1f6feb44; align-self: flex-end; }
+  .bubble.assistant { background: #11161d; border: 1px solid #2a313b; align-self: flex-start; }
+  .bubble-text { white-space: pre-wrap; margin-bottom: 6px; }
+  .bubble audio { margin-top: 6px; }
+  .dl-link { display: inline-block; margin-top: 6px; font-size: 12px; text-decoration: none;
+             padding: 4px 8px; border: 1px solid #888; border-radius: 6px; color: inherit; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: .75; margin: 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .clear-btn { background: none; border: 1px solid #2a313b; border-radius: 8px; color: #e6edf3;
+               padding: 6px 12px; font-size: 12px; cursor: pointer; opacity: .65; }
+  .clear-btn:hover { opacity: 1; }
+  .mode-label { font-size: 11px; opacity: .5; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- NAV -->
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <a href="/" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">◂ App</a>
+    <a href="/prototype.html" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">Prototype</a>
+    <a href="/talkback.html" style="padding:7px 14px;border-radius:8px;background:#1f6feb;color:#fff;text-decoration:none;font-size:13px;font-weight:600">Talk-back</a>
+    <a href="/avatar/" style="padding:7px 14px;border-radius:8px;background:#11161d;border:1px solid #2a313b;color:#e6edf3;text-decoration:none;font-size:13px">Lip-Sync ▸</a>
+  </div>
+
+  <h1>Talk-back</h1>
+  <p class="sub">Left: build and save characters. Right: test how a character performs in reword or chat mode.</p>
+
+  <div class="grid">
+    <!-- ============================================================ LEFT: CHARACTER -->
+    <div>
+      <div class="card">
+        <div class="card-title">Character</div>
+
+        <!-- Load character -->
+        <div class="field">
+          <label>Load character</label>
+          <select id="loadChar">
+            <option value="">— new / custom —</option>
+          </select>
+        </div>
+
+        <!-- Title + Name -->
+        <div class="row field">
+          <div>
+            <label>Title <span class="muted">(variant handle: Seth1, Seth_final)</span></label>
+            <input type="text" id="ctitle" placeholder="Seth_final" />
+          </div>
+          <div>
+            <label>Name <span class="muted">(spoken reference: Seth Meyers)</span></label>
+            <input type="text" id="cname" placeholder="Seth Meyers" />
+          </div>
+        </div>
+
+        <!-- Voice -->
+        <div class="field">
+          <label>Voice</label>
+          <select id="voice"></select>
+        </div>
+
+        <!-- Bio -->
+        <div class="field">
+          <label>Bio</label>
+          <textarea id="bio" style="min-height:140px" placeholder="Character backstory, role, quirks…"></textarea>
+          <div class="budget" id="bioBudget">(est. 0 / 600 tokens)</div>
+        </div>
+
+        <!-- Style -->
+        <div class="field">
+          <label>Style / Tone</label>
+          <textarea id="style" style="min-height:120px" placeholder="Tone, cadence, speech patterns…"></textarea>
+          <div class="budget" id="styleBudget">(est. 0 / 400 tokens)</div>
+        </div>
+
+        <!-- Strength -->
+        <div class="field">
+          <label>Default reword strength (stored on the character)</label>
+          <div class="seg" id="strength">
+            <button data-v="none">none (verbatim)</button>
+            <button data-v="light">light</button>
+            <button data-v="full" class="on">full</button>
+          </div>
+          <div class="small" id="strengthHint">Reworded fully in-character; meaning kept, wording/length may change.</div>
+        </div>
+
+        <!-- Tuning sliders -->
+        <div class="field">
+          <label>Tuning</label>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div>
+              <label>Speed</label>
+              <div class="slider-row">
+                <input type="range" id="speed" min=".7" max="1.4" step=".05" value="1.0">
+                <span class="slider-val" id="speedVal">1.00</span>
+              </div>
+            </div>
+            <div>
+              <label>Vibrance (guidance)</label>
+              <div class="slider-row">
+                <input type="range" id="guidance" min="1" max="4" step=".1" value="2.0">
+                <span class="slider-val" id="guidanceVal">2.0</span>
+              </div>
+            </div>
+            <div>
+              <label>Temperature</label>
+              <div class="slider-row">
+                <input type="range" id="temperature" min="0" max=".8" step=".1" value="0.0">
+                <span class="slider-val" id="temperatureVal">0.0</span>
+              </div>
+            </div>
+            <div>
+              <label>Steps</label>
+              <div class="slider-row">
+                <input type="range" id="steps" min="12" max="48" step="2" value="32">
+                <span class="slider-val" id="stepsVal">32</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split-synth (script-level pauses) -->
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="splitSynth"> split-synth pauses (break on “…”, insert silence)
+          </label>
+          <div class="muted" style="margin-top:4px">Real audible pauses for halting characters. Each chunk renders separately, so intonation resets — choppy on purpose. Slower to render.</div>
+        </div>
+
+        <!-- Ref clip -->
+        <details class="field">
+          <summary>Built-in ref clip (overrides Voice)</summary>
+          <div style="margin-top:8px">
+            <select id="refClip"><option value="">— none (use Voice above) —</option></select>
+          </div>
+        </details>
+
+        <!-- Save -->
+        <button class="speak" id="saveChar" style="background:#238636">Save character</button>
+        <div class="save-msg" id="saveMsg"></div>
+      </div>
+    </div>
+
+    <!-- ============================================================ RIGHT: CONSUMER -->
+    <div>
+      <div class="card">
+        <div class="card-title">Consumer test bench</div>
+
+        <!-- Mode toggle -->
+        <div class="field">
+          <label>Mode</label>
+          <div class="seg" id="mode">
+            <button data-m="reword" class="on">Reword</button>
+            <button data-m="chat">Chat</button>
+          </div>
+        </div>
+
+        <!-- Shared input -->
+        <div class="field">
+          <div class="input-row">
+            <button class="mic" id="mic">🎙</button>
+            <textarea id="utext" placeholder="Text to re-voice…" style="min-height:56px"></textarea>
+          </div>
+          <button class="speak" id="go" style="margin-top:10px">Re-voice it</button>
+        </div>
+
+        <div class="err" id="err"></div>
+
+        <!-- REWORD sub-panel -->
+        <div id="panelReword">
+          <div class="field" style="margin-top:4px">
+            <label style="display:flex;align-items:center;gap:8px;opacity:1">
+              <input type="checkbox" id="includeBio"> include bio in reword (experiment)
+            </label>
+          </div>
+          <div>
+            <label>What was actually spoken</label>
+            <div class="spoken" id="spoken"><span class="muted">— nothing yet —</span></div>
+            <div class="meta" id="meta"></div>
+            <audio id="player" controls playsinline></audio>
+            <a id="downloadReply" class="hidden dl-link" download>&#11015; Download reply</a>
+          </div>
+        </div>
+
+        <!-- CHAT sub-panel -->
+        <div id="panelChat" class="hidden">
+          <div class="transcript" id="transcript"></div>
+          <button class="clear-btn" id="clearChat">Clear history</button>
+        </div>
+
+        <!-- Assembly transparency -->
+        <details id="assemblyWrap" style="margin-top:14px">
+          <summary>System prompt sent (last call)</summary>
+          <pre id="assembly" style="margin-top:8px;background:#0e1116;border:1px solid #2a313b;border-radius:9px;padding:10px"></pre>
+        </details>
+      </div>
+    </div>
+  </div><!-- /grid -->
+</div><!-- /wrap -->
+
+<script>
+const $ = s => document.querySelector(s);
+
+// ── state ────────────────────────────────────────────────────────────────────
+let lastReplyUrl = null;
+let currentStrength = "full";
+let currentMode = "reword";
+let chatHistory = [];
+
+const HINTS = {
+  none: "Speak the text exactly; personality ignored.",
+  light: "Subtle dialect/word flavoring; same meaning + length.",
+  full: "Reworded fully in-character; meaning kept, wording/length may change.",
+};
+
+// stash loaded characters so loadChar change can refill fields
+let loadedChars = {};
+
+// ── iOS audio unlock ─────────────────────────────────────────────────────────
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) { return; }
+  const el = $("#player");
+  el.src = SILENT_WAV;
+  const p = el.play();
+  if (p && p.then) { p.then(() => el.pause()).catch(() => {}); }
+  audioUnlocked = true;
+}
+
+// ── mic capture ───────────────────────────────────────────────────────────────
+function pickMime() {
+  const candidates = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+  for (const c of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(c)) { return c; }
+  }
+  return "";
+}
+
+let mediaRecorder = null, stream = null, chunks = [], recording = false, mimeType = "";
+
+async function startRec() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    $("#err").textContent = "Mic blocked — needs HTTPS on iOS, and a granted mic permission.";
+    return;
+  }
+  mimeType = pickMime();
+  chunks = [];
+  mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) { chunks.push(e.data); } };
+  mediaRecorder.onstop = onRecStop;
+  mediaRecorder.start(200);
+  recording = true;
+  const m = $("#mic");
+  m.classList.add("recording");
+  m.textContent = "■ Stop";
+  $("#err").textContent = "";
+}
+
+function stopRec() {
+  if (mediaRecorder && recording) {
+    recording = false;
+    try { mediaRecorder.stop(); } catch (_) {}
+  }
+}
+
+function releaseStream() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+async function onRecStop() {
+  const m = $("#mic");
+  m.classList.remove("recording");
+  m.textContent = "🎙";
+  const type = (mediaRecorder && mediaRecorder.mimeType) || mimeType || "audio/mp4";
+  const blob = new Blob(chunks, { type });
+  releaseStream();
+  if (blob.size < 600) { $("#err").textContent = "Too short — hold a bit longer."; return; }
+
+  m.disabled = true; m.textContent = "…";
+  const ext = type.includes("mp4") ? "mp4" : type.includes("webm") ? "webm" : "ogg";
+  const fd = new FormData();
+  fd.append("audio", blob, "speech." + ext);
+  try {
+    const r = await fetch("/api/stt", { method: "POST", body: fd });
+    if (!r.ok) { throw new Error("STT " + r.status); }
+    const { text } = await r.json();
+    if (!text || !text.trim()) { $("#err").textContent = "Didn't catch that — try again."; return; }
+    $("#utext").value = text.trim();
+    await runConsumer();
+  } catch (e) {
+    $("#err").textContent = "Transcription failed: " + (e.message || e);
+  } finally {
+    m.disabled = false; m.textContent = "🎙";
+  }
+}
+
+$("#mic").addEventListener("click", () => {
+  unlockAudio();
+  if (!recording) { startRec(); } else { stopRec(); }
+});
+
+// ── token budget counters ────────────────────────────────────────────────────
+function tokenEst(str) { return Math.ceil(str.length / 4); }
+
+function updateBudget(textareaId, budgetId, limit, warnAt) {
+  const el = $(textareaId);
+  const badge = $(budgetId);
+  const n = tokenEst(el.value);
+  badge.textContent = `(est. ${n} / ${limit} tokens)`;
+  badge.className = "budget" + (n > limit ? " over" : n > warnAt ? " warn" : "");
+}
+
+function updateBioBudget() { updateBudget("#bio", "#bioBudget", 600, 510); }
+function updateStyleBudget() { updateBudget("#style", "#styleBudget", 400, 340); }
+
+$("#bio").addEventListener("input", () => { updateBioBudget(); updateSaveButton(); });
+$("#style").addEventListener("input", () => { updateStyleBudget(); updateSaveButton(); });
+
+function updateSaveButton() {
+  const bioOver = tokenEst($("#bio").value) > 600;
+  const styleOver = tokenEst($("#style").value) > 400;
+  $("#saveChar").disabled = bioOver || styleOver;
+}
+
+// ── slider readouts ──────────────────────────────────────────────────────────
+function wireSlider(id, valId, decimals) {
+  const el = $(id);
+  const out = $(valId);
+  function refresh() { out.textContent = parseFloat(el.value).toFixed(decimals); }
+  el.addEventListener("input", refresh);
+  refresh();
+}
+wireSlider("#speed", "#speedVal", 2);
+wireSlider("#guidance", "#guidanceVal", 1);
+wireSlider("#temperature", "#temperatureVal", 1);
+wireSlider("#steps", "#stepsVal", 0);
+
+// ── strength segmented control ────────────────────────────────────────────────
+function setStrength(v) {
+  if (!HINTS[v]) { return; }
+  currentStrength = v;
+  [...$("#strength").children].forEach(x => x.classList.toggle("on", x.dataset.v === v));
+  $("#strengthHint").textContent = HINTS[v];
+}
+$("#strength").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) { return; }
+  setStrength(b.dataset.v);
+});
+
+// ── mode toggle ───────────────────────────────────────────────────────────────
+function setMode(m) {
+  currentMode = m;
+  [...$("#mode").children].forEach(x => x.classList.toggle("on", x.dataset.m === m));
+  const isChat = m === "chat";
+  $("#panelReword").classList.toggle("hidden", isChat);
+  $("#panelChat").classList.toggle("hidden", !isChat);
+  $("#go").textContent = isChat ? "Send" : "Re-voice it";
+  $("#utext").placeholder = isChat ? "Your message…" : "Text to re-voice…";
+  $("#err").textContent = "";
+}
+$("#mode").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) { return; }
+  setMode(b.dataset.m);
+});
+
+// ── load options ─────────────────────────────────────────────────────────────
+async function loadOptions() {
+  try {
+    const v = await (await fetch("/api/voices")).json();
+    const vs = $("#voice");
+    (v.voices || v || []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.id; opt.textContent = (o.label || o.id) + (o.custom ? " (custom)" : "");
+      vs.appendChild(opt);
+    });
+    if (v.default) { vs.value = v.default; }
+  } catch (e) {}
+
+  try {
+    const c = await (await fetch("/api/prototype/refclips")).json();
+    const cs = $("#refClip");
+    (c.clips || []).forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      cs.appendChild(opt);
+    });
+  } catch (e) {}
+
+  await refreshCharacterDropdown();
+}
+
+async function refreshCharacterDropdown() {
+  try {
+    const ch = await (await fetch("/api/characters")).json();
+    const cs = $("#loadChar");
+    // clear existing options except first
+    while (cs.options.length > 1) { cs.remove(1); }
+    loadedChars = {};
+    (ch.characters || []).forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = o.id;
+      opt.textContent = o.title ? `${o.title} — ${o.name || o.label}` : (o.label || o.id);
+      cs.appendChild(opt);
+      loadedChars[o.id] = o;
+    });
+  } catch (e) {}
+}
+
+loadOptions();
+
+// ── load character into left column ──────────────────────────────────────────
+$("#loadChar").addEventListener("change", e => {
+  const id = e.target.value;
+  const c = loadedChars[id];
+  if (!c) { return; }
+  if (c.title !== undefined) { $("#ctitle").value = c.title || ""; }
+  if (c.name !== undefined) { $("#cname").value = c.name || ""; }
+  if (c.voice) { $("#voice").value = c.voice; }
+  if (c.bio !== undefined) { $("#bio").value = c.bio || ""; }
+  if (c.style !== undefined) { $("#style").value = c.style || ""; }
+  if (c.strength) { setStrength(c.strength); }
+  $("#splitSynth").checked = !!c.split_synth;
+  if (c.tuning) {
+    if (c.tuning.speed !== undefined) { $("#speed").value = c.tuning.speed; }
+    if (c.tuning.guidance !== undefined) { $("#guidance").value = c.tuning.guidance; }
+    if (c.tuning.temperature !== undefined) { $("#temperature").value = c.tuning.temperature; }
+    if (c.tuning.steps !== undefined) { $("#steps").value = c.tuning.steps; }
+    // refresh all slider readouts
+    ["speed","guidance","temperature","steps"].forEach(id => {
+      $(`#${id}`).dispatchEvent(new Event("input"));
+    });
+  }
+  updateBioBudget();
+  updateStyleBudget();
+  updateSaveButton();
+});
+
+// ── save character ────────────────────────────────────────────────────────────
+$("#saveChar").addEventListener("click", async () => {
+  const msg = $("#saveMsg");
+  msg.className = "save-msg";
+  msg.textContent = "Saving…";
+  const body = {
+    title: $("#ctitle").value.trim(),
+    name: $("#cname").value.trim(),
+    voice: $("#voice").value,
+    bio: $("#bio").value,
+    style: $("#style").value,
+    strength: currentStrength,
+    split_synth: $("#splitSynth").checked,
+    tuning: {
+      speed: parseFloat($("#speed").value),
+      guidance: parseFloat($("#guidance").value),
+      temperature: parseFloat($("#temperature").value),
+      steps: parseInt($("#steps").value, 10),
+    }
+  };
+  try {
+    const r = await fetch("/api/characters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) {
+      throw new Error(j.detail || j.error || "HTTP " + r.status);
+    }
+    msg.className = "save-msg ok";
+    msg.textContent = `Saved: ${j.id}`;
+    await refreshCharacterDropdown();
+    // select the saved char
+    if (j.id) { $("#loadChar").value = j.id; }
+  } catch (e) {
+    msg.className = "save-msg fail";
+    msg.textContent = "Error: " + (e.message || e);
+  }
+});
+
+// ── chat helpers ──────────────────────────────────────────────────────────────
+$("#clearChat").addEventListener("click", () => {
+  chatHistory = [];
+  $("#transcript").innerHTML = "";
+});
+
+function appendBubble(role, text, audioBlob) {
+  const wrap = document.createElement("div");
+  wrap.className = "bubble " + role;
+  const p = document.createElement("div");
+  p.className = "bubble-text";
+  p.textContent = text;
+  wrap.appendChild(p);
+  if (audioBlob) {
+    const url = URL.createObjectURL(audioBlob);
+    const au = document.createElement("audio");
+    au.controls = true;
+    au.playsinline = true;
+    au.src = url;
+    wrap.appendChild(au);
+    // Auto-play assistant replies, matching the reword player behavior.
+    if (role === "assistant") {
+      au.autoplay = true;
+      au.play().catch(() => {});
+    }
+    const dl = document.createElement("a");
+    dl.className = "dl-link";
+    dl.href = url;
+    dl.download = `chat-${new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)}.wav`;
+    dl.textContent = "⬇ Download";
+    wrap.appendChild(dl);
+  }
+  const tc = $("#transcript");
+  tc.appendChild(wrap);
+  tc.scrollTop = tc.scrollHeight;
+}
+
+// ── core consumer call ────────────────────────────────────────────────────────
+async function runConsumer() {
+  const text = $("#utext").value.trim();
+  if (!text) { $("#err").textContent = "Enter or speak something first."; return; }
+  $("#err").textContent = "";
+  $("#go").disabled = true;
+  const origLabel = $("#go").textContent;
+  $("#go").textContent = "Rendering…";
+
+  // Prime the reword player inside this gesture for iOS
+  if (currentMode === "reword") {
+    const pl = $("#player");
+    try { pl.muted = true; const p = pl.play(); if (p && p.catch) { p.catch(() => {}); } } catch (_) {}
+  }
+
+  const fd = new FormData();
+  fd.set("mode", currentMode);
+  fd.set("text", text);
+  fd.set("name", $("#cname").value.trim());
+  fd.set("bio", $("#bio").value);
+  fd.set("style", $("#style").value);
+  fd.set("strength", currentStrength);
+  fd.set("include_bio", currentMode === "reword" ? String($("#includeBio").checked) : "false");
+  fd.set("split_synth", String($("#splitSynth").checked));
+  fd.set("voice", $("#voice").value);
+  fd.set("speed", $("#speed").value);
+  fd.set("guidance", $("#guidance").value);
+  fd.set("temperature", $("#temperature").value);
+  fd.set("steps", $("#steps").value);
+  if (currentMode === "chat") {
+    fd.set("history", JSON.stringify(chatHistory));
+  }
+  const clip = $("#refClip").value;
+  if (clip) { fd.set("ref_clip", clip); }
+
+  const t0 = performance.now();
+  const ctrl = new AbortController();
+  const killer = setTimeout(() => ctrl.abort(), 120000);
+
+  try {
+    const r = await fetch("/api/prototype/character_speak", {
+      method: "POST", body: fd, signal: ctrl.signal,
+    });
+
+    if (!r.ok) {
+      let d = "";
+      try { d = JSON.stringify(await r.json()); } catch (_) {}
+      throw new Error("HTTP " + r.status + " " + d);
+    }
+
+    const spokenText = decodeURIComponent(r.headers.get("x-spoken-text") || "");
+    const replyText = decodeURIComponent(r.headers.get("x-reply-text") || "");
+    const systemPrompt = decodeURIComponent(r.headers.get("x-system-prompt") || "");
+    const usedVoice = r.headers.get("x-voice") || "";
+    const blob = await r.blob();
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+
+    // Assembly panel
+    if (systemPrompt) {
+      $("#assembly").textContent = systemPrompt;
+    }
+
+    if (currentMode === "reword") {
+      if (lastReplyUrl) { URL.revokeObjectURL(lastReplyUrl); }
+      lastReplyUrl = URL.createObjectURL(blob);
+      const pl = $("#player");
+      $("#spoken").textContent = spokenText || text;
+      $("#meta").textContent = `voice=${usedVoice} · strength=${currentStrength} · ${dt}s · ${(blob.size/1024|0)} KB`;
+      pl.muted = false; pl.src = lastReplyUrl; pl.load();
+      pl.play().catch(() => {});
+      const dl = $("#downloadReply");
+      dl.href = lastReplyUrl;
+      dl.download = `talkback-${new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)}.wav`;
+      dl.classList.remove("hidden");
+    } else {
+      // chat mode
+      const assistantText = replyText || spokenText || "(no reply)";
+      chatHistory.push({ role: "user", content: text });
+      chatHistory.push({ role: "assistant", content: assistantText });
+      appendBubble("user", text, null);
+      appendBubble("assistant", assistantText, blob);
+      $("#utext").value = "";
+    }
+  } catch (e) {
+    const msg = e.name === "AbortError"
+      ? "Timed out (120s) — model may be busy. Try again."
+      : String(e.message || e);
+    $("#err").textContent = msg;
+    if (currentMode === "reword") {
+      $("#spoken").innerHTML = '<span class="muted">—</span>';
+    }
+  } finally {
+    clearTimeout(killer);
+    $("#go").disabled = false;
+    $("#go").textContent = origLabel;
+  }
+}
+
+$("#go").addEventListener("click", () => { unlockAudio(); runConsumer(); });
+</script>
+</body>
+</html>

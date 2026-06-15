@@ -429,6 +429,74 @@ def reword(text: str, personality_id: str = DEFAULT_PERSONALITY, strength: str =
 
 
 # ---------------------------------------------------------------------------
+# CONSUMER ASSEMBLY (character-builder prototype)
+#
+# A library CHARACTER stores identity: bio (who they are + facts) + style (tone +
+# speech patterns) + a default reword strength + voice + tuning. A CONSUMER picks a
+# modality and assembles the system prompt. The modality INTRO is owned by the
+# consumer (this code), NOT stored in the character:
+#   - reword = a TRANSFORM. Restyle an already-written line. Needs style heavily,
+#     facts rarely; carries the strength block. (bio optional - test toggle.)
+#   - chat   = GENERATION. The model IS the character, answering as them. Needs
+#     bio + style fully; the strength block is meaningless (no source line) -> omitted.
+# Identity (bio+style) is shared; the intro + strength are what differ.
+# ---------------------------------------------------------------------------
+REWORD_INTRO = (
+    "You are re-voicing a single line of text as {name}. Rewrite the line in this "
+    "character's voice - keep its meaning and facts; change only the wording, cadence "
+    "and attitude. Do NOT answer it, do NOT add new content - only restyle the given line."
+)
+CHAT_INTRO = (
+    "You are {name}. You are having a spoken back-and-forth with the user. Stay fully "
+    "in character, speak as {name}, and draw on what you know about yourself when relevant."
+)
+
+# Chat keeps the bio safe from front-truncation by giving Ollama real headroom and
+# capping how many prior turns ride along. 8192 ctx is trivial for a 3B on the 4080.
+CHAT_NUM_CTX = 8192
+CHAT_HISTORY_TURNS = 12   # most recent user/assistant messages kept
+
+
+def _ollama_chat(messages, num_predict=200, num_ctx=None, temperature=0.7):
+    """One stateless Ollama chat call. Returns the assistant text (stripped)."""
+    options = {"temperature": temperature, "num_predict": num_predict}
+    if num_ctx:
+        options["num_ctx"] = num_ctx
+    payload = json.dumps({
+        "model": OLLAMA_MODEL, "messages": messages,
+        "stream": False, "options": options,
+    }).encode()
+    req = urllib.request.Request(OLLAMA_URL, data=payload,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read())
+    return data["message"]["content"].strip()
+
+
+def assemble_reword_system(name, bio, style, strength, include_bio=False):
+    """Build the reword (transform) system prompt from explicit character fields."""
+    intro = REWORD_INTRO.format(name=(name or "the character").strip())
+    parts = [intro]
+    if include_bio and (bio or "").strip():
+        parts.append(bio.strip())
+    if (style or "").strip():
+        parts.append(style.strip())
+    parts.append(REWORD_STRENGTH.get(strength, REWORD_STRENGTH["full"]))
+    return " ".join(parts) + VOICE_STYLE
+
+
+def assemble_chat_system(name, bio, style):
+    """Build the chat (generation) system prompt - bio + style, no strength block."""
+    intro = CHAT_INTRO.format(name=(name or "the character").strip())
+    parts = [intro]
+    if (bio or "").strip():
+        parts.append(bio.strip())
+    if (style or "").strip():
+        parts.append(style.strip())
+    return " ".join(parts) + VOICE_STYLE
+
+
+# ---------------------------------------------------------------------------
 # Editable prompts config (dev-panel pattern: edits persist to prompts.json,
 # hot-reloaded into the running service; hardcoded values above are the defaults).
 #
@@ -488,6 +556,147 @@ def save_prompts(cfg: dict):
 
 
 load_prompts_override()
+
+
+# ---------------------------------------------------------------------------
+# Characters: named bundles that pair a VOICE with a PERSONALITY (+ default
+# reword strength). Picking "Singaporean Uncle" sets voice=UncleLo and
+# personality=sg_uncle in one move. Config-driven via characters.json so new
+# characters are a pure JSON edit - no server changes.
+#
+# A character may also carry its OWN inline `system` prompt. If present we
+# register (or override) the referenced personality with it at load time, so a
+# brand-new character can ship its prompt in characters.json without touching
+# the hardcoded PERSONALITIES list. `personality` then defaults to the char id.
+# ---------------------------------------------------------------------------
+CHARACTERS_PATH = os.path.join(HERE, "characters.json")
+CHARACTERS = []  # [{id,label,voice,personality,strength}]
+
+
+def load_characters():
+    """Load character (voice+personality) bundles from characters.json."""
+    global CHARACTERS
+    if not os.path.isfile(CHARACTERS_PATH):
+        CHARACTERS = []
+        return
+    try:
+        data = json.load(open(CHARACTERS_PATH, encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        print(f"[characters] failed to load {CHARACTERS_PATH}: {e}", flush=True)
+        CHARACTERS = []
+        return
+    out = []
+    for c in (data.get("characters") or []):
+        cid = c.get("id")
+        if not cid:
+            continue
+        pid = c.get("personality") or cid
+        strength = c.get("strength") if c.get("strength") in ("none", "light", "full") else "full"
+        # v2 split fields; fall back to the legacy single `system` blob (-> treated as bio).
+        bio = c.get("bio")
+        style = c.get("style") or ""
+        legacy_system = c.get("system")
+        if bio is None and isinstance(legacy_system, str):
+            bio = legacy_system
+        bio = bio or ""
+        # The personality `system` consumed by reword()/chat() = bio + style joined, so
+        # the existing /api/prototype/speak path keeps working unchanged.
+        combined = (bio + ("\n\n" + style if style.strip() else "")).strip()
+        if combined:
+            if pid in PERSONALITY_BY_ID:
+                PERSONALITY_BY_ID[pid]["system"] = combined
+            else:
+                p = {"id": pid, "label": c.get("label") or c.get("name") or pid,
+                     "group": "Characters", "system": combined}
+                PERSONALITIES.append(p)
+                PERSONALITY_BY_ID[pid] = p
+        tuning = c.get("tuning") or {}
+        out.append({
+            "id": cid,
+            "title": c.get("title") or c.get("label") or cid,
+            "label": c.get("label") or c.get("name") or c.get("title") or cid,
+            "name": c.get("name") or c.get("label") or cid,
+            "voice": c.get("voice", DEFAULT_VOICE),
+            "personality": pid,
+            "strength": strength,
+            "bio": bio,
+            "style": style,
+            "split_synth": bool(c.get("split_synth", False)),
+            "tuning": {
+                "speed": float(tuning.get("speed", 1.0)),
+                "guidance": float(tuning.get("guidance", 2.0)),
+                "temperature": float(tuning.get("temperature", 0.0)),
+                "steps": int(tuning.get("steps", 32)),
+            },
+            "schema_version": c.get("schema_version", 2 if (c.get("bio") or c.get("style")) else 1),
+        })
+    CHARACTERS = out
+    print(f"[characters] loaded {len(out)} character(s) from {CHARACTERS_PATH}", flush=True)
+
+
+# Budgets for character text fields (token estimates; client mirrors these).
+BIO_BUDGET_TOKENS = 600
+STYLE_BUDGET_TOKENS = 400
+
+
+def _est_tokens(s: str) -> int:
+    """Cheap, conservative token estimate (chars/4) - matches the client-side gate."""
+    return (len(s or "") + 3) // 4
+
+
+def save_character(c: dict) -> dict:
+    """Append-or-replace a character (by id) in characters.json and hot-reload.
+
+    Mirrors save_prompts(): write file, then reload in-memory so the new/updated
+    character is live immediately (no restart).
+    """
+    title = (c.get("title") or "").strip()
+    name = (c.get("name") or "").strip()
+    if not title:
+        raise ValueError("title is required")
+    cid = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_") or "character"
+    bio = (c.get("bio") or "").strip()
+    style = (c.get("style") or "").strip()
+    # Defense-in-depth budget check (the UI also gates Save).
+    if _est_tokens(bio) > BIO_BUDGET_TOKENS:
+        raise ValueError(f"bio over budget ({_est_tokens(bio)}/{BIO_BUDGET_TOKENS} tokens)")
+    if _est_tokens(style) > STYLE_BUDGET_TOKENS:
+        raise ValueError(f"style over budget ({_est_tokens(style)}/{STYLE_BUDGET_TOKENS} tokens)")
+    strength = c.get("strength") if c.get("strength") in ("none", "light", "full") else "full"
+    tn = c.get("tuning") or {}
+    entry = {
+        "schema_version": 2,
+        "id": cid,
+        "title": title,
+        "name": name or title,
+        "label": name or title,
+        "voice": (c.get("voice") or DEFAULT_VOICE).strip(),
+        "bio": bio,
+        "style": style,
+        "strength": strength,
+        "split_synth": bool(c.get("split_synth", False)),
+        "tuning": {
+            "speed": float(tn.get("speed", 1.0)),
+            "guidance": float(tn.get("guidance", 2.0)),
+            "temperature": float(tn.get("temperature", 0.0)),
+            "steps": int(tn.get("steps", 32)),
+        },
+    }
+    # Load existing file (preserve _meta + other characters), upsert by id.
+    doc = {"characters": []}
+    if os.path.isfile(CHARACTERS_PATH):
+        try:
+            doc = json.load(open(CHARACTERS_PATH, encoding="utf-8")) or doc
+        except Exception:  # noqa: BLE001
+            doc = {"characters": []}
+    chars = doc.get("characters") or []
+    chars = [x for x in chars if x.get("id") != cid]
+    chars.append(entry)
+    doc["characters"] = chars
+    with open(CHARACTERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2)
+    load_characters()   # hot-reload
+    return entry
 
 
 def decode_audio_to_wave(raw: bytes):
@@ -666,10 +875,51 @@ def synth_with_prompt(text: str, clone_prompt, num_step: int = 16, speed: float 
     return buf.getvalue()
 
 
+SPLIT_GAP_MS = 350  # silence inserted between chunks for split-synth pauses
+
+
+def synth_split(text: str, synth_fn, gap_ms: int = SPLIT_GAP_MS) -> bytes:
+    """Render `text` in chunks split on ellipses, stitching real silence between them.
+
+    OmniVoice ignores punctuation for pacing (measured: ~0.1s per '...'), so the only
+    way to get an audible pause is to break the utterance and insert silence at the
+    script level. `synth_fn(chunk) -> WAV bytes` does the per-chunk synthesis (voice or
+    clip). Falls back to a single call when there is no split point. NOTE: each chunk is
+    synthed as a standalone sentence, so intonation resets at every pause — intended for
+    halting/fragmented characters (e.g. Slow Chad), not smooth ones."""
+    chunks = [c.strip() for c in re.split(r"\.{3,}|…", text) if c.strip()]
+    if len(chunks) <= 1:
+        return synth_fn(text)
+    voiced, sr = [], TTS_SR
+    for ch in chunks:
+        # A single short fragment can occasionally make OmniVoice emit an empty array
+        # (raises on an internal max()). Don't let one bad chunk kill the whole line —
+        # skip it and keep the others.
+        try:
+            data, sr = sf.read(io.BytesIO(synth_fn(ch)), dtype="float32")
+        except Exception as e:  # noqa: BLE001
+            print(f"[split-synth] chunk failed, skipping: {ch!r} ({e})", flush=True)
+            continue
+        if data.size:
+            voiced.append(data)
+    if not voiced:
+        return synth_fn(text)  # everything failed → fall back to one-shot
+    gap = np.zeros(int(sr * gap_ms / 1000), dtype=voiced[0].dtype)
+    stitched = []
+    for i, data in enumerate(voiced):
+        stitched.append(data)
+        if i < len(voiced) - 1:
+            stitched.append(gap)
+    buf = io.BytesIO()
+    sf.write(buf, np.concatenate(stitched), sr, format="WAV")
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
 load_custom_voices()  # rebuild saved custom voices at startup
+load_characters()     # voice+personality bundles (after voices/personalities exist)
 
 
 @app.get("/api/voices")
@@ -790,6 +1040,128 @@ def get_personalities():
                            "group": p.get("group", "Other")} for p in PERSONALITIES],
         "default": DEFAULT_PERSONALITY,
     }
+
+
+@app.get("/api/characters")
+def get_characters():
+    """Character bundles: each pairs a voice id + personality id (+ default strength)."""
+    return {"characters": CHARACTERS, "default": (CHARACTERS[0]["id"] if CHARACTERS else None),
+            "budgets": {"bio": BIO_BUDGET_TOKENS, "style": STYLE_BUDGET_TOKENS}}
+
+
+@app.post("/api/characters")
+def post_character(c: dict = Body(...)):
+    """Save a character (title/name/voice/bio/style/strength/tuning) to characters.json."""
+    try:
+        entry = save_character(c)
+    except ValueError as e:
+        return JSONResponse({"error": "invalid", "detail": str(e)}, status_code=422)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "save_failed", "detail": str(e)}, status_code=500)
+    return {"ok": True, "id": entry["id"], "saved_to": CHARACTERS_PATH}
+
+
+@app.post("/api/prototype/character_speak")
+def character_speak(
+    mode: str = Form("reword"),              # reword | chat
+    name: str = Form(""),
+    bio: str = Form(""),
+    style: str = Form(""),
+    strength: str = Form("full"),            # reword only
+    include_bio: str = Form("false"),        # reword only: include bio in the transform
+    voice: str = Form(DEFAULT_VOICE),
+    text: str = Form(...),                   # the line (reword) or the user message (chat)
+    history: str = Form(""),                 # chat only: JSON [{role,content},...]
+    speed: float = Form(1.0),
+    guidance: float = Form(2.0),
+    temperature: float = Form(0.0),
+    steps: int = Form(32),
+    ref_clip: str = Form(""),                # optional built-in working/ clip
+    split_synth: str = Form("false"),        # split on '...' and stitch silence for real pauses
+):
+    """Consumer test-bench: assemble a system prompt from raw character fields per
+    modality, run the LLM, then speak the result. Returns audio + the assembled
+    system prompt (header) so the UI can show exactly what was sent.
+    """
+    src = (text or "").strip()
+    if not src:
+        return JSONResponse({"error": "empty_text"}, status_code=400)
+    mode = mode if mode in ("reword", "chat") else "reword"
+    if strength not in ("none", "light", "full"):
+        strength = "full"
+
+    # 1) TRANSFORM or GENERATE.
+    try:
+        if mode == "chat":
+            system = assemble_chat_system(name, bio, style)
+            msgs = [{"role": "system", "content": system}]
+            try:
+                prior = json.loads(history) if history else []
+            except Exception:  # noqa: BLE001
+                prior = []
+            if isinstance(prior, list):
+                msgs += [m for m in prior[-CHAT_HISTORY_TURNS:]
+                         if isinstance(m, dict) and m.get("role") and m.get("content")]
+            msgs.append({"role": "user", "content": src})
+            spoken = _ollama_chat(msgs, num_predict=300, num_ctx=CHAT_NUM_CTX)
+        else:
+            inc = str(include_bio).lower() in ("1", "true", "yes", "on")
+            if strength == "none":
+                system = assemble_reword_system(name, bio, style, strength, inc)
+                spoken = src  # verbatim, no LLM call
+            else:
+                system = assemble_reword_system(name, bio, style, strength, inc)
+                spoken = _ollama_chat(
+                    [{"role": "system", "content": system}, {"role": "user", "content": src}],
+                    num_predict=200, num_ctx=CHAT_NUM_CTX)
+    except Exception as e:  # noqa: BLE001 — ollama down etc.
+        return JSONResponse({"error": "llm_failed", "detail": str(e)}, status_code=503)
+
+    sp, gd, tp, st = clamp_tuning(speed, guidance, temperature, steps)
+    do_split = str(split_synth).lower() in ("1", "true", "yes", "on")
+    # Log what the LLM actually produced so pause/style behavior is inspectable after
+    # the fact (header x-spoken-text isn't logged; rendered clips aren't saved). Written
+    # to a dedicated file too, since harbor's stdout view interleaves streams.
+    ndots = spoken.count("...") + spoken.count(chr(0x2026))
+    rec = f"mode={mode} split={int(do_split)} voice={voice} ellipses={ndots} spoken={spoken!r}"
+    print(f"[character_speak] {rec}", flush=True)
+    try:
+        with open(os.path.join(HERE, "working", "character_speak.log"), "a", encoding="utf-8") as _f:
+            _f.write(rec + "\n")
+    except Exception:  # noqa: BLE001 — logging must never break a render
+        pass
+
+    # 2) VOICE: built-in clip, else a registered preset/custom id.
+    try:
+        if ref_clip:
+            prompt = ref_clip_prompt(ref_clip)
+            if prompt is None:
+                return JSONResponse({"error": "unknown_ref_clip", "clip": ref_clip}, status_code=404)
+            fn = lambda t: synth_with_prompt(t, prompt, num_step=st, speed=sp,  # noqa: E731
+                                             guidance_scale=gd, class_temperature=tp)
+            audio = synth_split(spoken, fn) if do_split else fn(spoken)
+            used_voice = f"clip:{os.path.basename(ref_clip)}"
+        else:
+            with custom_lock:
+                is_custom = voice in custom_prompts
+            if voice not in VOICE_BY_ID and not is_custom:
+                voice = DEFAULT_VOICE
+            fn = lambda t: synth(t, voice, num_step=st, speed=sp,  # noqa: E731
+                                 guidance_scale=gd, class_temperature=tp)
+            audio = synth_split(spoken, fn) if do_split else fn(spoken)
+            used_voice = voice
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": "synth_failed", "detail": str(e)}, status_code=500)
+
+    return Response(content=audio, media_type="audio/wav", headers={
+        "Cache-Control": "no-store",
+        "x-spoken-text": urllib.parse.quote(spoken),
+        "x-reply-text": urllib.parse.quote(spoken if mode == "chat" else ""),
+        "x-system-prompt": urllib.parse.quote(system),
+        "x-mode": mode,
+        "x-voice": used_voice,
+        "x-split": "1" if do_split else "0",
+    })
 
 
 @app.get("/api/preview")
@@ -1192,6 +1564,15 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
 @app.get("/")
 def index():
     return FileResponse(os.path.join(HERE, "static", "index.html"))
+
+
+# Speech-to-visual prototypes (built Vite app). Mounted BEFORE the catch-all "/"
+# so /avatar/* resolves to the avatar SPA build. html=True serves index.html for
+# the app root. If the build is missing, the mount is skipped (dev still runs the
+# app on :5173 via `npm run dev`).
+_AVATAR_DIST = os.path.join(HERE, "avatar", "web", "dist")
+if os.path.isdir(_AVATAR_DIST):
+    app.mount("/avatar", StaticFiles(directory=_AVATAR_DIST, html=True), name="avatar")
 
 
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "static")), name="static")

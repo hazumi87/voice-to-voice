@@ -29,6 +29,7 @@ const modeSeg = document.getElementById("modeSeg");
 const personaSelect = document.getElementById("personaSelect");
 const cancelBtn = document.getElementById("cancel");
 const stopBtn = document.getElementById("stop");
+const downloadBtn = document.getElementById("downloadReply");
 const waveCanvas = document.getElementById("wave");
 const waveCtx = waveCanvas.getContext("2d");
 const transcriptEl = document.getElementById("transcript");
@@ -175,6 +176,22 @@ function log(msg) {
   sendToServer("log", msg);
 }
 function setStatus(s) { statusEl.textContent = s; }
+
+// Keep the most recent reply audio downloadable. We hold ONE object URL alive for
+// download (the player reuses it too); the previous one is revoked when a new reply
+// arrives — so we never revoke on playback-end, or the download link would break.
+let lastReplyUrl = null;
+function offerReplyDownload(blob) {
+  if (lastReplyUrl) { URL.revokeObjectURL(lastReplyUrl); }
+  lastReplyUrl = URL.createObjectURL(blob);
+  if (downloadBtn) {
+    downloadBtn.href = lastReplyUrl;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    downloadBtn.download = `reply-${stamp}.wav`;
+    downloadBtn.classList.remove("hidden");
+  }
+  return lastReplyUrl;
+}
 
 // ---------- Transcript ----------
 function addTurn(role, text) {
@@ -793,13 +810,12 @@ async function sendComposed() {
     if (reply) addTurn("bot", reply);
     pendingSegments = [];
     const audioBlob = await r.blob();
-    const url = URL.createObjectURL(audioBlob);
+    const url = offerReplyDownload(audioBlob);
     player.src = url;
     setStatus("Speaking…");
     stopBtn.classList.remove("hidden");
     player.onended = () => {
       stopBtn.classList.add("hidden");
-      URL.revokeObjectURL(url);
       setStatus(idleMicLabel());
     };
     try { await player.play(); }
@@ -844,13 +860,12 @@ async function sendAudio(blob, type) {
     if (transcript) addTurn("user", transcript);
     if (reply) addTurn("bot", reply);
     const audioBlob = await r.blob();
-    const url = URL.createObjectURL(audioBlob);
+    const url = offerReplyDownload(audioBlob);
     player.src = url;
     setStatus("Speaking…");
     stopBtn.classList.remove("hidden");
     const finishPlayback = () => {
       stopBtn.classList.add("hidden");
-      URL.revokeObjectURL(url);
       setStatus(mode === "auto" ? "Tap & speak" : "Tap to talk");
     };
     player.onended = finishPlayback;

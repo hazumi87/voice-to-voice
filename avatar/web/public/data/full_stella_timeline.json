@@ -1,0 +1,770 @@
+{
+  "clip": "full_stella.wav",
+  "duration": 20.44,
+  "text": "Please call Stella, ask her to bring these things with her from the store, six spoons of fresh snow peas, five thick slabs of blue cheese, and maybe a snack for a brother Bob. We also need a small plastic snake and a big toy frog for the kids. She can scoop these things into three red bags and we will go meet her Wednesday at the train station.",
+  "scheme": "blair-10-numbered",
+  "timeline": [
+    {
+      "t_start": 0.0,
+      "t_end": 0.32,
+      "viseme": 1,
+      "src": "Please"
+    },
+    {
+      "t_start": 0.32,
+      "t_end": 0.407,
+      "viseme": 2,
+      "src": "call"
+    },
+    {
+      "t_start": 0.407,
+      "t_end": 0.493,
+      "viseme": 4,
+      "src": "call"
+    },
+    {
+      "t_start": 0.493,
+      "t_end": 0.58,
+      "viseme": 9,
+      "src": "call"
+    },
+    {
+      "t_start": 0.58,
+      "t_end": 0.7,
+      "viseme": 2,
+      "src": "Stella,"
+    },
+    {
+      "t_start": 0.7,
+      "t_end": 0.82,
+      "viseme": 9,
+      "src": "Stella,"
+    },
+    {
+      "t_start": 0.82,
+      "t_end": 1.34,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 1.34,
+      "t_end": 1.59,
+      "viseme": 4,
+      "src": "ask"
+    },
+    {
+      "t_start": 1.59,
+      "t_end": 1.913,
+      "viseme": 2,
+      "src": "ask"
+    },
+    {
+      "t_start": 1.913,
+      "t_end": 1.987,
+      "viseme": 3,
+      "src": "her"
+    },
+    {
+      "t_start": 1.987,
+      "t_end": 2.06,
+      "viseme": 9,
+      "src": "her"
+    },
+    {
+      "t_start": 2.06,
+      "t_end": 2.14,
+      "viseme": 2,
+      "src": "to"
+    },
+    {
+      "t_start": 2.14,
+      "t_end": 2.313,
+      "viseme": 5,
+      "src": "to"
+    },
+    {
+      "t_start": 2.313,
+      "t_end": 2.5,
+      "viseme": 2,
+      "src": "bring"
+    },
+    {
+      "t_start": 2.5,
+      "t_end": 2.74,
+      "viseme": 2,
+      "src": "things"
+    },
+    {
+      "t_start": 2.74,
+      "t_end": 2.84,
+      "viseme": 6,
+      "src": "with"
+    },
+    {
+      "t_start": 2.84,
+      "t_end": 3.38,
+      "viseme": 2,
+      "src": "with"
+    },
+    {
+      "t_start": 3.38,
+      "t_end": 3.44,
+      "viseme": 2,
+      "src": "store,"
+    },
+    {
+      "t_start": 3.44,
+      "t_end": 3.5,
+      "viseme": 5,
+      "src": "store,"
+    },
+    {
+      "t_start": 3.5,
+      "t_end": 3.56,
+      "viseme": 9,
+      "src": "store,"
+    },
+    {
+      "t_start": 3.56,
+      "t_end": 3.62,
+      "viseme": 3,
+      "src": "store,"
+    },
+    {
+      "t_start": 3.62,
+      "t_end": 4.22,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 4.22,
+      "t_end": 4.585,
+      "viseme": 2,
+      "src": "six"
+    },
+    {
+      "t_start": 4.585,
+      "t_end": 4.71,
+      "viseme": 1,
+      "src": "spoons"
+    },
+    {
+      "t_start": 4.71,
+      "t_end": 4.835,
+      "viseme": 5,
+      "src": "spoons"
+    },
+    {
+      "t_start": 4.835,
+      "t_end": 4.96,
+      "viseme": 2,
+      "src": "spoons"
+    },
+    {
+      "t_start": 4.96,
+      "t_end": 5.04,
+      "viseme": 5,
+      "src": "of"
+    },
+    {
+      "t_start": 5.04,
+      "t_end": 5.285,
+      "viseme": 8,
+      "src": "of"
+    },
+    {
+      "t_start": 5.285,
+      "t_end": 5.44,
+      "viseme": 2,
+      "src": "fresh"
+    },
+    {
+      "t_start": 5.44,
+      "t_end": 5.54,
+      "viseme": 5,
+      "src": "snow"
+    },
+    {
+      "t_start": 5.54,
+      "t_end": 5.64,
+      "viseme": 6,
+      "src": "snow"
+    },
+    {
+      "t_start": 5.64,
+      "t_end": 5.76,
+      "viseme": 1,
+      "src": "peas,"
+    },
+    {
+      "t_start": 5.76,
+      "t_end": 5.88,
+      "viseme": 4,
+      "src": "peas,"
+    },
+    {
+      "t_start": 5.88,
+      "t_end": 6.22,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 6.22,
+      "t_end": 6.34,
+      "viseme": 8,
+      "src": "five"
+    },
+    {
+      "t_start": 6.34,
+      "t_end": 6.46,
+      "viseme": 8,
+      "src": "five"
+    },
+    {
+      "t_start": 6.46,
+      "t_end": 6.776,
+      "viseme": 2,
+      "src": "thick"
+    },
+    {
+      "t_start": 6.776,
+      "t_end": 6.852,
+      "viseme": 9,
+      "src": "slabs"
+    },
+    {
+      "t_start": 6.852,
+      "t_end": 6.928,
+      "viseme": 4,
+      "src": "slabs"
+    },
+    {
+      "t_start": 6.928,
+      "t_end": 7.004,
+      "viseme": 1,
+      "src": "slabs"
+    },
+    {
+      "t_start": 7.004,
+      "t_end": 7.08,
+      "viseme": 2,
+      "src": "slabs"
+    },
+    {
+      "t_start": 7.08,
+      "t_end": 7.19,
+      "viseme": 5,
+      "src": "of"
+    },
+    {
+      "t_start": 7.19,
+      "t_end": 7.46,
+      "viseme": 8,
+      "src": "of"
+    },
+    {
+      "t_start": 7.46,
+      "t_end": 7.54,
+      "viseme": 2,
+      "src": "cheese,"
+    },
+    {
+      "t_start": 7.54,
+      "t_end": 7.62,
+      "viseme": 3,
+      "src": "cheese,"
+    },
+    {
+      "t_start": 7.62,
+      "t_end": 7.7,
+      "viseme": 2,
+      "src": "cheese,"
+    },
+    {
+      "t_start": 7.7,
+      "t_end": 7.78,
+      "viseme": 3,
+      "src": "cheese,"
+    },
+    {
+      "t_start": 7.78,
+      "t_end": 8.26,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 8.26,
+      "t_end": 8.37,
+      "viseme": 4,
+      "src": "and"
+    },
+    {
+      "t_start": 8.37,
+      "t_end": 8.66,
+      "viseme": 2,
+      "src": "and"
+    },
+    {
+      "t_start": 8.66,
+      "t_end": 8.78,
+      "viseme": 4,
+      "src": "a"
+    },
+    {
+      "t_start": 8.78,
+      "t_end": 8.84,
+      "viseme": 2,
+      "src": "snack"
+    },
+    {
+      "t_start": 8.84,
+      "t_end": 8.9,
+      "viseme": 4,
+      "src": "snack"
+    },
+    {
+      "t_start": 8.9,
+      "t_end": 8.96,
+      "viseme": 2,
+      "src": "snack"
+    },
+    {
+      "t_start": 8.96,
+      "t_end": 9.04,
+      "viseme": 8,
+      "src": "for"
+    },
+    {
+      "t_start": 9.04,
+      "t_end": 9.12,
+      "viseme": 5,
+      "src": "for"
+    },
+    {
+      "t_start": 9.12,
+      "t_end": 9.2,
+      "viseme": 9,
+      "src": "for"
+    },
+    {
+      "t_start": 9.2,
+      "t_end": 9.64,
+      "viseme": 4,
+      "src": "a"
+    },
+    {
+      "t_start": 9.64,
+      "t_end": 10.46,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 10.46,
+      "t_end": 10.67,
+      "viseme": 6,
+      "src": "We"
+    },
+    {
+      "t_start": 10.67,
+      "t_end": 11.04,
+      "viseme": 3,
+      "src": "We"
+    },
+    {
+      "t_start": 11.04,
+      "t_end": 11.12,
+      "viseme": 2,
+      "src": "need"
+    },
+    {
+      "t_start": 11.12,
+      "t_end": 11.2,
+      "viseme": 3,
+      "src": "need"
+    },
+    {
+      "t_start": 11.2,
+      "t_end": 11.28,
+      "viseme": 2,
+      "src": "need"
+    },
+    {
+      "t_start": 11.28,
+      "t_end": 11.36,
+      "viseme": 4,
+      "src": "a"
+    },
+    {
+      "t_start": 11.36,
+      "t_end": 11.435,
+      "viseme": 2,
+      "src": "small"
+    },
+    {
+      "t_start": 11.435,
+      "t_end": 11.51,
+      "viseme": 1,
+      "src": "small"
+    },
+    {
+      "t_start": 11.51,
+      "t_end": 11.585,
+      "viseme": 4,
+      "src": "small"
+    },
+    {
+      "t_start": 11.585,
+      "t_end": 11.66,
+      "viseme": 9,
+      "src": "small"
+    },
+    {
+      "t_start": 11.66,
+      "t_end": 11.74,
+      "viseme": 1,
+      "src": "plastic"
+    },
+    {
+      "t_start": 11.74,
+      "t_end": 11.82,
+      "viseme": 9,
+      "src": "plastic"
+    },
+    {
+      "t_start": 11.82,
+      "t_end": 11.9,
+      "viseme": 4,
+      "src": "plastic"
+    },
+    {
+      "t_start": 11.9,
+      "t_end": 12.075,
+      "viseme": 2,
+      "src": "plastic"
+    },
+    {
+      "t_start": 12.075,
+      "t_end": 12.17,
+      "viseme": 4,
+      "src": "snake"
+    },
+    {
+      "t_start": 12.17,
+      "t_end": 12.265,
+      "viseme": 2,
+      "src": "snake"
+    },
+    {
+      "t_start": 12.265,
+      "t_end": 12.36,
+      "viseme": 3,
+      "src": "snake"
+    },
+    {
+      "t_start": 12.36,
+      "t_end": 12.61,
+      "viseme": 4,
+      "src": "and"
+    },
+    {
+      "t_start": 12.61,
+      "t_end": 12.86,
+      "viseme": 2,
+      "src": "and"
+    },
+    {
+      "t_start": 12.86,
+      "t_end": 12.98,
+      "viseme": 4,
+      "src": "a"
+    },
+    {
+      "t_start": 12.98,
+      "t_end": 13.07,
+      "viseme": 1,
+      "src": "big"
+    },
+    {
+      "t_start": 13.07,
+      "t_end": 13.253,
+      "viseme": 2,
+      "src": "big"
+    },
+    {
+      "t_start": 13.253,
+      "t_end": 13.347,
+      "viseme": 5,
+      "src": "toy"
+    },
+    {
+      "t_start": 13.347,
+      "t_end": 13.44,
+      "viseme": 2,
+      "src": "toy"
+    },
+    {
+      "t_start": 13.44,
+      "t_end": 13.505,
+      "viseme": 8,
+      "src": "frog"
+    },
+    {
+      "t_start": 13.505,
+      "t_end": 13.57,
+      "viseme": 9,
+      "src": "frog"
+    },
+    {
+      "t_start": 13.57,
+      "t_end": 13.635,
+      "viseme": 5,
+      "src": "frog"
+    },
+    {
+      "t_start": 13.635,
+      "t_end": 13.7,
+      "viseme": 2,
+      "src": "frog"
+    },
+    {
+      "t_start": 13.7,
+      "t_end": 13.807,
+      "viseme": 8,
+      "src": "for"
+    },
+    {
+      "t_start": 13.807,
+      "t_end": 13.913,
+      "viseme": 5,
+      "src": "for"
+    },
+    {
+      "t_start": 13.913,
+      "t_end": 14.12,
+      "viseme": 9,
+      "src": "for"
+    },
+    {
+      "t_start": 14.12,
+      "t_end": 14.34,
+      "viseme": 2,
+      "src": "kids."
+    },
+    {
+      "t_start": 14.34,
+      "t_end": 15.26,
+      "viseme": 10,
+      "src": "gap"
+    },
+    {
+      "t_start": 15.26,
+      "t_end": 15.34,
+      "viseme": 2,
+      "src": "She"
+    },
+    {
+      "t_start": 15.34,
+      "t_end": 15.513,
+      "viseme": 3,
+      "src": "She"
+    },
+    {
+      "t_start": 15.513,
+      "t_end": 15.633,
+      "viseme": 2,
+      "src": "can"
+    },
+    {
+      "t_start": 15.633,
+      "t_end": 15.707,
+      "viseme": 5,
+      "src": "scoop"
+    },
+    {
+      "t_start": 15.707,
+      "t_end": 15.78,
+      "viseme": 1,
+      "src": "scoop"
+    },
+    {
+      "t_start": 15.78,
+      "t_end": 15.84,
+      "viseme": 2,
+      "src": "these"
+    },
+    {
+      "t_start": 15.84,
+      "t_end": 15.9,
+      "viseme": 3,
+      "src": "these"
+    },
+    {
+      "t_start": 15.9,
+      "t_end": 16.02,
+      "viseme": 2,
+      "src": "these"
+    },
+    {
+      "t_start": 16.02,
+      "t_end": 16.44,
+      "viseme": 2,
+      "src": "things"
+    },
+    {
+      "t_start": 16.44,
+      "t_end": 16.6,
+      "viseme": 5,
+      "src": "into"
+    },
+    {
+      "t_start": 16.6,
+      "t_end": 16.68,
+      "viseme": 2,
+      "src": "three"
+    },
+    {
+      "t_start": 16.68,
+      "t_end": 16.76,
+      "viseme": 9,
+      "src": "three"
+    },
+    {
+      "t_start": 16.76,
+      "t_end": 16.9,
+      "viseme": 3,
+      "src": "three"
+    },
+    {
+      "t_start": 16.9,
+      "t_end": 17.02,
+      "viseme": 3,
+      "src": "red"
+    },
+    {
+      "t_start": 17.02,
+      "t_end": 17.1,
+      "viseme": 1,
+      "src": "bags"
+    },
+    {
+      "t_start": 17.1,
+      "t_end": 17.18,
+      "viseme": 4,
+      "src": "bags"
+    },
+    {
+      "t_start": 17.18,
+      "t_end": 17.26,
+      "viseme": 2,
+      "src": "bags"
+    },
+    {
+      "t_start": 17.26,
+      "t_end": 17.54,
+      "viseme": 4,
+      "src": "and"
+    },
+    {
+      "t_start": 17.54,
+      "t_end": 17.82,
+      "viseme": 2,
+      "src": "and"
+    },
+    {
+      "t_start": 17.82,
+      "t_end": 17.89,
+      "viseme": 6,
+      "src": "we"
+    },
+    {
+      "t_start": 17.89,
+      "t_end": 18.08,
+      "viseme": 3,
+      "src": "we"
+    },
+    {
+      "t_start": 18.08,
+      "t_end": 18.14,
+      "viseme": 9,
+      "src": "will"
+    },
+    {
+      "t_start": 18.14,
+      "t_end": 18.21,
+      "viseme": 2,
+      "src": "go"
+    },
+    {
+      "t_start": 18.21,
+      "t_end": 18.28,
+      "viseme": 5,
+      "src": "go"
+    },
+    {
+      "t_start": 18.28,
+      "t_end": 18.36,
+      "viseme": 1,
+      "src": "meet"
+    },
+    {
+      "t_start": 18.36,
+      "t_end": 18.44,
+      "viseme": 3,
+      "src": "meet"
+    },
+    {
+      "t_start": 18.44,
+      "t_end": 18.92,
+      "viseme": 2,
+      "src": "meet"
+    },
+    {
+      "t_start": 18.92,
+      "t_end": 19.14,
+      "viseme": 4,
+      "src": "at"
+    },
+    {
+      "t_start": 19.14,
+      "t_end": 19.585,
+      "viseme": 2,
+      "src": "at"
+    },
+    {
+      "t_start": 19.585,
+      "t_end": 19.7,
+      "viseme": 2,
+      "src": "train"
+    },
+    {
+      "t_start": 19.7,
+      "t_end": 19.78,
+      "viseme": 4,
+      "src": "station."
+    },
+    {
+      "t_start": 19.78,
+      "t_end": 19.86,
+      "viseme": 2,
+      "src": "station."
+    },
+    {
+      "t_start": 19.86,
+      "t_end": 19.94,
+      "viseme": 5,
+      "src": "station."
+    },
+    {
+      "t_start": 19.94,
+      "t_end": 20.02,
+      "viseme": 2,
+      "src": "station."
+    },
+    {
+      "t_start": 20.02,
+      "t_end": 20.44,
+      "viseme": 10,
+      "src": "gap"
+    }
+  ]
+}
