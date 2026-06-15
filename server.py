@@ -229,9 +229,40 @@ print(f"[init] STT ready on {STT_DEVICE}", flush=True)
 
 print("[init] loading OmniVoice (k2-fsa/OmniVoice, cuda/float16) ...", flush=True)
 from omnivoice import OmniVoice
-tts_model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda", dtype=torch.float16)
-TTS_SR = tts_model.sampling_rate
-print(f"[init] TTS ready, sr={TTS_SR}", flush=True)
+
+# OmniVoice's resident footprint is ~8GB VRAM. On a 16GB card shared with Ollama,
+# from_pretrained can OOM. Loading it at import time meant that OOM crashed the whole
+# process -> harbor restarted it -> the partial CUDA alloc leaked -> next start had even
+# less VRAM -> a self-reinforcing crash-loop that took the ENTIRE site down (including the
+# static /avatar mount, which needs no GPU at all). So the load is now NON-FATAL: if it
+# fails the web server still starts and serves everything else; TTS lazily retries on the
+# next synth via ensure_tts() once VRAM frees. tts_model is None until loaded.
+TTS_SR = 24000              # OmniVoice sampling rate; refreshed from the model on load
+tts_model = None
+_tts_load_error = None
+_tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
+
+
+def _load_tts_model():
+    """Attempt to load OmniVoice onto the GPU. Returns True on success, False on failure.
+    NEVER raises — a failure must not crash startup (see crash-loop note above)."""
+    global tts_model, TTS_SR, _tts_load_error
+    if tts_model is not None:
+        return True
+    try:
+        m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda", dtype=torch.float16)
+        tts_model = m
+        TTS_SR = m.sampling_rate
+        _tts_load_error = None
+        print(f"[init] TTS ready, sr={TTS_SR}", flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — usually CUDA OOM under VRAM contention
+        _tts_load_error = str(e)
+        print(f"[init] OmniVoice load FAILED (non-fatal, retries on demand): {e}", flush=True)
+        return False
+
+
+_load_tts_model()  # best-effort at startup; the server starts regardless
 
 # Custom (cloned) voices: saved to disk so they survive restarts.
 CUSTOM_DIR = os.path.join(HERE, "custom_voices")
@@ -732,6 +763,8 @@ def trim_edges(wav, lead_s: float = 0.12, trail_s: float = 0.40, fade_s: float =
 
 def build_clone_prompt(wav_np, ref_text: str):
     """Encode a reference clip into a reusable OmniVoice voice-clone prompt (GPU)."""
+    if tts_model is None:
+        raise RuntimeError(f"TTS unavailable (OmniVoice not loaded): {_tts_load_error}")
     with gpu_guard("tts.create_clone_prompt"):
         return tts_model.create_voice_clone_prompt(
             ref_audio=(wav_np, TTS_SR), ref_text=ref_text, preprocess_prompt=True
@@ -755,6 +788,7 @@ def list_ref_clips():
 
 def ref_clip_prompt(name: str):
     """Load + cache a clone prompt for a working/ reference clip (encode once)."""
+    ensure_tts()
     name = os.path.basename(name)  # no path traversal
     if name in _refclip_cache:
         return _refclip_cache[name]
@@ -790,6 +824,29 @@ def load_custom_voices():
             print(f"[init] loaded custom voice '{meta['label']}' ({meta['id']})", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"[init] failed to load custom voice {fn}: {e}", flush=True)
+
+
+def ensure_tts():
+    """Guarantee OmniVoice is loaded before a GPU TTS op; raise (caught -> 503) if it
+    can't load. Lazily recovers after a non-fatal startup OOM: once VRAM frees, the next
+    synth loads the model and rebuilds the voice-clone prompts that were skipped while
+    it was down. Serialized by a reentrant lock so concurrent synths load it once."""
+    if tts_model is not None:
+        return
+    with _tts_load_lock:
+        if tts_model is not None:
+            return
+        if not _load_tts_model():
+            raise RuntimeError(f"TTS unavailable (OmniVoice not loaded): {_tts_load_error}")
+        # Model just came up — rebuild custom-voice + ref-clip prompts skipped while down.
+        try:
+            custom_voices.clear()
+            custom_prompts.clear()
+            _refclip_cache.clear()
+            load_custom_voices()
+            print("[tts] recovered: model loaded + voice prompts rebuilt", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tts] voice prompt rebuild after lazy load failed: {e}", flush=True)
 
 
 def clamp_tuning(speed, guidance, temperature, steps):
@@ -841,6 +898,7 @@ def select_clone_window(raw: bytes):
 
 def synth(text: str, voice_id: str, num_step: int = 16, speed: float = 1.0,
           guidance_scale: float = 2.0, class_temperature: float = 0.0) -> bytes:
+    ensure_tts()
     with custom_lock:
         clone = custom_prompts.get(voice_id)
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
@@ -864,6 +922,7 @@ def synth_with_prompt(text: str, clone_prompt, num_step: int = 16, speed: float 
                       guidance_scale: float = 2.0, class_temperature: float = 0.0) -> bytes:
     """Synthesize with an ad-hoc clone prompt (e.g. an uploaded wav not registered as a voice).
     Used by the prototype's ad-hoc wav+stt path so you can audition any clip without saving it."""
+    ensure_tts()
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
                   class_temperature=class_temperature)
     with gpu_guard("tts.generate.adhoc_prompt"):
@@ -931,6 +990,10 @@ def get_voices():
 
 @app.post("/api/voices/custom")
 def add_custom_voice(audio: UploadFile = File(...), name: str = Form(...)):
+    try:
+        ensure_tts()  # cloning needs the GPU encoder
+    except RuntimeError as e:
+        return JSONResponse({"error": "tts_unavailable", "detail": str(e)}, status_code=503)
     raw = audio.file.read()
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)
@@ -980,6 +1043,10 @@ def register_custom_voice(
     Pass voice_id to make registration idempotent/replaceable (re-registering the
     same id overwrites cleanly). Omit it to mint one from the label.
     """
+    try:
+        ensure_tts()  # registering a voice needs the GPU encoder
+    except RuntimeError as e:
+        return JSONResponse({"error": "tts_unavailable", "detail": str(e)}, status_code=503)
     raw = audio.file.read()
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)
@@ -1430,9 +1497,12 @@ def health_probe():
     if inflight is not None:
         gpu["op"] = inflight
         gpu["held_s"] = round(time.time() - _gpu_inflight["since"], 1)
-    return {"ok": True, "loaded": True, "service": "voice-to-voice",
-            "engine": "omnivoice", "device": "cuda:omnivoice",
-            "tts_sr": TTS_SR, "voices": voice_ids, "gpu": gpu}
+    out = {"ok": True, "loaded": tts_model is not None, "service": "voice-to-voice",
+           "engine": "omnivoice", "device": "cuda:omnivoice",
+           "tts_sr": TTS_SR, "voices": voice_ids, "gpu": gpu}
+    if tts_model is None:
+        out["tts_error"] = _tts_load_error  # TTS down but server up (avatar/STT/chat still work)
+    return out
 
 
 @app.get("/api/health")
