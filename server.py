@@ -243,7 +243,7 @@ _tts_load_error = None
 _tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
 
 
-TTS_MIN_FREE_VRAM_GB = 9.0   # OmniVoice resident ~8GB; require headroom before loading
+TTS_MIN_FREE_VRAM_GB = 10.5  # OmniVoice resident ~8GB; require headroom (Ollama evicted first)
 
 
 def _free_vram_gb():
@@ -253,6 +253,22 @@ def _free_vram_gb():
         return free / (1024 ** 3)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _evict_ollama():
+    """Ask Ollama to unload its model from VRAM (keep_alive=0) so OmniVoice has clear
+    headroom for its ~8GB load. Ollama is the main VRAM contender; a resident Ollama
+    model during from_pretrained is what pushes us into the hard-abort zone. Best-effort
+    with a brief settle wait. Ollama transparently reloads on the next chat/reword call."""
+    try:
+        body = json.dumps({"model": OLLAMA_MODEL, "keep_alive": 0}).encode()
+        req = urllib.request.Request("http://127.0.0.1:11434/api/generate",
+                                     data=body, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10).read()
+        print("[tts] evicted Ollama model to free VRAM for OmniVoice load", flush=True)
+        time.sleep(2.0)  # let the CUDA allocator actually release before we measure/alloc
+    except Exception as e:  # noqa: BLE001
+        print(f"[tts] ollama eviction skipped: {e}", flush=True)
 
 
 def _load_tts_model():
@@ -265,6 +281,7 @@ def _load_tts_model():
     global tts_model, TTS_SR, _tts_load_error
     if tts_model is not None:
         return True
+    _evict_ollama()  # free VRAM before measuring + allocating — Ollama reloads on demand
     free = _free_vram_gb()
     if free is not None and free < TTS_MIN_FREE_VRAM_GB:
         _tts_load_error = (f"insufficient VRAM: {free:.1f}GB free < {TTS_MIN_FREE_VRAM_GB}GB needed "
