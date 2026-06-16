@@ -346,6 +346,52 @@ function pickMime() {
 
 let mediaRecorder = null, stream = null, chunks = [], recording = false, mimeType = "";
 
+// ── voice-activity auto-stop ──────────────────────────────────────────────────
+// Stop the recording on its own once you pause. We watch mic RMS via a WebAudio
+// AnalyserNode: after speech is first detected, a sustained quiet stretch ends the
+// take. Tunables (RMS is 0..1):
+const VAD_SPEECH_RMS = 0.030;   // above this = speaking
+const VAD_SILENCE_RMS = 0.018;  // below this = quiet (hysteresis gap vs speech)
+const VAD_HANG_MS = 1100;       // quiet must persist this long after speech to stop
+const VAD_MAX_MS = 20000;       // hard cap so a noisy room can't record forever
+let vadCtx = null, vadRAF = 0, vadSpoke = false, vadQuietSince = 0, vadStartedAt = 0;
+
+function startVAD() {
+  try {
+    vadCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = vadCtx.createMediaStreamSource(stream);
+    const an = vadCtx.createAnalyser();
+    an.fftSize = 1024;
+    src.connect(an);
+    const buf = new Float32Array(an.fftSize);
+    vadSpoke = false; vadQuietSince = 0; vadStartedAt = performance.now();
+    const tick = () => {
+      if (!recording) { return; }
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; }
+      const rms = Math.sqrt(sum / buf.length);
+      const now = performance.now();
+      if (rms > VAD_SPEECH_RMS) {
+        vadSpoke = true; vadQuietSince = 0;            // (re)started talking
+      } else if (vadSpoke && rms < VAD_SILENCE_RMS) {
+        if (!vadQuietSince) { vadQuietSince = now; }    // quiet stretch began
+        else if (now - vadQuietSince >= VAD_HANG_MS) { stopRec(); return; }
+      } else {
+        vadQuietSince = 0;                              // in-between: not committed quiet
+      }
+      if (now - vadStartedAt >= VAD_MAX_MS) { stopRec(); return; }
+      vadRAF = requestAnimationFrame(tick);
+    };
+    vadRAF = requestAnimationFrame(tick);
+  } catch (_) { /* VAD optional — manual stop still works */ }
+}
+
+function stopVAD() {
+  if (vadRAF) { cancelAnimationFrame(vadRAF); vadRAF = 0; }
+  if (vadCtx) { try { vadCtx.close(); } catch (_) {} vadCtx = null; }
+}
+
 async function startRec() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -364,16 +410,19 @@ async function startRec() {
   m.classList.add("recording");
   m.textContent = "■ Stop";
   $("#err").textContent = "";
+  startVAD();                       // auto-stop when you pause (manual stop still works)
 }
 
 function stopRec() {
   if (mediaRecorder && recording) {
     recording = false;
+    stopVAD();
     try { mediaRecorder.stop(); } catch (_) {}
   }
 }
 
 function releaseStream() {
+  stopVAD();
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
 }
 
@@ -666,11 +715,8 @@ function appendBubble(role, text, audioBlob) {
     au.playsinline = true;
     au.src = url;
     wrap.appendChild(au);
-    // Auto-play assistant replies, matching the reword player behavior.
-    if (role === "assistant") {
-      au.autoplay = true;
-      au.play().catch(() => {});
-    }
+    // NOTE: auto-play is driven by the primed #player in runConsumer (a freshly-created
+    // <audio> can't auto-play on iOS after the await). This element is just a replay control.
     const dl = document.createElement("a");
     dl.className = "dl-link";
     dl.href = url;
@@ -692,8 +738,11 @@ async function runConsumer() {
   const origLabel = $("#go").textContent;
   $("#go").textContent = "Rendering…";
 
-  // Prime the reword player inside this gesture for iOS
-  if (currentMode === "reword") {
+  // Prime the shared #player INSIDE this gesture (iOS): a muted play() now lets us swap
+  // src + play() after the await without losing the user-gesture token. Do it for BOTH
+  // modes — chat replies auto-play through #player too (a brand-new <audio> created after
+  // the await can't auto-play on iOS, which is why chat replies went silent).
+  {
     const pl = $("#player");
     try { pl.muted = true; const p = pl.play(); if (p && p.catch) { p.catch(() => {}); } } catch (_) {}
   }
@@ -775,6 +824,13 @@ async function runConsumer() {
       appendBubble("user", text, null);
       appendBubble("assistant", assistantText, blob);
       $("#utext").value = "";
+      // Auto-play the reply through the primed #player (the in-bubble <audio> stays as a
+      // replay/scrub control). #player was primed in-gesture above, so this is allowed on iOS.
+      if (lastReplyUrl) { URL.revokeObjectURL(lastReplyUrl); }
+      lastReplyUrl = URL.createObjectURL(blob);
+      const pl = $("#player");
+      pl.muted = false; pl.src = lastReplyUrl; pl.load();
+      pl.play().catch(() => {});
     }
   } catch (e) {
     const msg = e.name === "AbortError"
