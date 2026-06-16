@@ -82,6 +82,12 @@
                padding: 6px 12px; font-size: 12px; cursor: pointer; opacity: .65; }
   .clear-btn:hover { opacity: 1; }
   .mode-label { font-size: 11px; opacity: .5; margin-top: 4px; }
+  .save-convo-btn {
+    background: none; border: 1px solid #2a313b; border-radius: 8px; color: #e6edf3;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; opacity: .8; margin-left: 8px;
+  }
+  .save-convo-btn:hover { opacity: 1; border-color: #888; }
+  .save-convo-btn:disabled { opacity: .4; cursor: default; }
 </style>
 </head>
 <body>
@@ -192,7 +198,7 @@
         <!-- Split-synth (script-level pauses) -->
         <div class="field">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="splitSynth"> split-synth pauses (break on “…”, insert silence)
+            <input type="checkbox" id="splitSynth"> split-synth pauses (break on "…", insert silence)
           </label>
           <div class="muted" style="margin-top:4px">Real audible pauses for halting characters. Each chunk renders separately, so intonation resets — choppy on purpose. Slower to render.</div>
         </div>
@@ -255,7 +261,10 @@
         <!-- CHAT sub-panel -->
         <div id="panelChat" class="hidden">
           <div class="transcript" id="transcript"></div>
-          <button class="clear-btn" id="clearChat">Clear history</button>
+          <div style="display:flex;align-items:center;gap:0;margin-top:0">
+            <button class="clear-btn" id="clearChat">Clear history</button>
+            <button class="save-convo-btn hidden" id="saveConvo">⬇ Save conversation MP3</button>
+          </div>
         </div>
 
         <!-- Assembly transparency -->
@@ -268,6 +277,7 @@
   </div><!-- /grid -->
 </div><!-- /wrap -->
 
+<script src="/lame.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 
@@ -276,6 +286,33 @@ let lastReplyUrl = null;
 let currentStrength = "full";
 let currentMode = "reword";
 let chatHistory = [];
+
+// ── FEATURE 1: isDirty state ─────────────────────────────────────────────────
+let isDirty = false;
+// Track the previously-selected loadChar value so we can revert on cancel
+let prevLoadCharId = "";
+
+function markDirty() {
+  isDirty = true;
+  updateSaveButton();
+}
+
+function markClean() {
+  isDirty = false;
+  updateSaveButton();
+}
+
+// ── FEATURE 2: conversation segments ────────────────────────────────────────
+// Each entry: { role: 'user'|'assistant', blob: Blob }
+let convoSegments = [];
+// Retain the last mic-recorded blob so we can push it as the user turn
+let lastMicBlob = null;
+
+function updateSaveConvoButton() {
+  const btn = $("#saveConvo");
+  const hasAssistant = convoSegments.some(s => s.role === "assistant");
+  btn.classList.toggle("hidden", !hasAssistant);
+}
 
 const HINTS = {
   none: "Speak the text exactly; personality ignored.",
@@ -349,6 +386,9 @@ async function onRecStop() {
   releaseStream();
   if (blob.size < 600) { $("#err").textContent = "Too short — hold a bit longer."; return; }
 
+  // Retain mic blob for conversation export (user turn audio)
+  lastMicBlob = blob;
+
   m.disabled = true; m.textContent = "…";
   const ext = type.includes("mp4") ? "mp4" : type.includes("webm") ? "webm" : "ogg";
   const fd = new FormData();
@@ -386,14 +426,26 @@ function updateBudget(textareaId, budgetId, limit, warnAt) {
 function updateBioBudget() { updateBudget("#bio", "#bioBudget", 600, 510); }
 function updateStyleBudget() { updateBudget("#style", "#styleBudget", 400, 340); }
 
-$("#bio").addEventListener("input", () => { updateBioBudget(); updateSaveButton(); });
-$("#style").addEventListener("input", () => { updateStyleBudget(); updateSaveButton(); });
+// bio/style: update budget + dirty on input
+$("#bio").addEventListener("input", () => { updateBioBudget(); markDirty(); });
+$("#style").addEventListener("input", () => { updateStyleBudget(); markDirty(); });
 
 function updateSaveButton() {
   const bioOver = tokenEst($("#bio").value) > 600;
   const styleOver = tokenEst($("#style").value) > 400;
-  $("#saveChar").disabled = bioOver || styleOver;
+  // Disabled if over budget OR not dirty
+  $("#saveChar").disabled = bioOver || styleOver || !isDirty;
 }
+
+// ── dirty hooks on other character fields ────────────────────────────────────
+["#ctitle", "#cname"].forEach(sel => {
+  $(sel).addEventListener("input", markDirty);
+});
+$("#voice").addEventListener("change", markDirty);
+["#speed", "#guidance", "#temperature", "#steps"].forEach(sel => {
+  $(sel).addEventListener("input", markDirty);
+});
+$("#splitSynth").addEventListener("change", markDirty);
 
 // ── slider readouts ──────────────────────────────────────────────────────────
 function wireSlider(id, valId, decimals) {
@@ -409,11 +461,13 @@ wireSlider("#temperature", "#temperatureVal", 1);
 wireSlider("#steps", "#stepsVal", 0);
 
 // ── strength segmented control ────────────────────────────────────────────────
-function setStrength(v) {
+function setStrength(v, fromLoad) {
   if (!HINTS[v]) { return; }
   currentStrength = v;
   [...$("#strength").children].forEach(x => x.classList.toggle("on", x.dataset.v === v));
   $("#strengthHint").textContent = HINTS[v];
+  // Mark dirty unless this call is from loading a character
+  if (!fromLoad) { markDirty(); }
 }
 $("#strength").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) { return; }
@@ -462,7 +516,7 @@ async function loadOptions() {
   await refreshCharacterDropdown();
 }
 
-async function refreshCharacterDropdown() {
+async function refreshCharacterDropdown(reSelectId) {
   try {
     const ch = await (await fetch("/api/characters")).json();
     const cs = $("#loadChar");
@@ -476,6 +530,10 @@ async function refreshCharacterDropdown() {
       cs.appendChild(opt);
       loadedChars[o.id] = o;
     });
+    if (reSelectId) {
+      cs.value = reSelectId;
+      prevLoadCharId = reSelectId;
+    }
   } catch (e) {}
 }
 
@@ -483,15 +541,50 @@ loadOptions();
 
 // ── load character into left column ──────────────────────────────────────────
 $("#loadChar").addEventListener("change", e => {
-  const id = e.target.value;
-  const c = loadedChars[id];
-  if (!c) { return; }
+  const newId = e.target.value;
+
+  // If dirty, confirm discard before loading
+  if (isDirty && newId !== prevLoadCharId) {
+    const newName = newId ? (loadedChars[newId]
+      ? (loadedChars[newId].title || loadedChars[newId].name || newId)
+      : newId) : "new / custom";
+    const ok = window.confirm(
+      `You have unsaved changes to this character. Discard them and load "${newName}"? (Cancel keeps your edits — Save first if you want to keep them.)`
+    );
+    if (!ok) {
+      // Revert select to previous value
+      e.target.value = prevLoadCharId;
+      return;
+    }
+  }
+
+  prevLoadCharId = newId;
+
+  const c = loadedChars[newId];
+  if (!c) {
+    // Selected "new / custom" — just mark clean, leave fields as-is
+    markClean();
+    return;
+  }
+
+  // Populate fields
   if (c.title !== undefined) { $("#ctitle").value = c.title || ""; }
   if (c.name !== undefined) { $("#cname").value = c.name || ""; }
-  if (c.voice) { $("#voice").value = c.voice; }
+  if (c.voice) {
+    // Guarantee the voice applies even if the voice <select> wasn't fully populated yet
+    // (otherwise setting .value to a missing option silently no-ops and the consumer
+    // falls back to the default voice — the "played as default until I saved" bug).
+    const vsel = $("#voice");
+    if (![...vsel.options].some(o => o.value === c.voice)) {
+      const opt = document.createElement("option");
+      opt.value = c.voice; opt.textContent = c.voice + " (custom)";
+      vsel.appendChild(opt);
+    }
+    vsel.value = c.voice;
+  }
   if (c.bio !== undefined) { $("#bio").value = c.bio || ""; }
   if (c.style !== undefined) { $("#style").value = c.style || ""; }
-  if (c.strength) { setStrength(c.strength); }
+  if (c.strength) { setStrength(c.strength, true); }
   $("#splitSynth").checked = !!c.split_synth;
   if (c.tuning) {
     if (c.tuning.speed !== undefined) { $("#speed").value = c.tuning.speed; }
@@ -499,13 +592,14 @@ $("#loadChar").addEventListener("change", e => {
     if (c.tuning.temperature !== undefined) { $("#temperature").value = c.tuning.temperature; }
     if (c.tuning.steps !== undefined) { $("#steps").value = c.tuning.steps; }
     // refresh all slider readouts
-    ["speed","guidance","temperature","steps"].forEach(id => {
-      $(`#${id}`).dispatchEvent(new Event("input"));
+    ["speed","guidance","temperature","steps"].forEach(sid => {
+      $(`#${sid}`).dispatchEvent(new Event("input"));
     });
   }
   updateBioBudget();
   updateStyleBudget();
-  updateSaveButton();
+  // After load, mark clean
+  markClean();
 });
 
 // ── save character ────────────────────────────────────────────────────────────
@@ -540,9 +634,9 @@ $("#saveChar").addEventListener("click", async () => {
     }
     msg.className = "save-msg ok";
     msg.textContent = `Saved: ${j.id}`;
-    await refreshCharacterDropdown();
-    // select the saved char
-    if (j.id) { $("#loadChar").value = j.id; }
+    // Mark clean and refresh dropdown, re-selecting the saved character
+    markClean();
+    await refreshCharacterDropdown(j.id || undefined);
   } catch (e) {
     msg.className = "save-msg fail";
     msg.textContent = "Error: " + (e.message || e);
@@ -552,7 +646,10 @@ $("#saveChar").addEventListener("click", async () => {
 // ── chat helpers ──────────────────────────────────────────────────────────────
 $("#clearChat").addEventListener("click", () => {
   chatHistory = [];
+  convoSegments = [];
+  lastMicBlob = null;
   $("#transcript").innerHTML = "";
+  updateSaveConvoButton();
 });
 
 function appendBubble(role, text, audioBlob) {
@@ -665,6 +762,16 @@ async function runConsumer() {
       const assistantText = replyText || spokenText || "(no reply)";
       chatHistory.push({ role: "user", content: text });
       chatHistory.push({ role: "assistant", content: assistantText });
+
+      // Retain user mic audio if this turn came from mic
+      if (lastMicBlob) {
+        convoSegments.push({ role: "user", blob: lastMicBlob });
+        lastMicBlob = null;
+      }
+      // Retain assistant TTS audio
+      convoSegments.push({ role: "assistant", blob: blob });
+      updateSaveConvoButton();
+
       appendBubble("user", text, null);
       appendBubble("assistant", assistantText, blob);
       $("#utext").value = "";
@@ -685,6 +792,122 @@ async function runConsumer() {
 }
 
 $("#go").addEventListener("click", () => { unlockAudio(); runConsumer(); });
+
+// ── Save conversation as MP3 ──────────────────────────────────────────────────
+$("#saveConvo").addEventListener("click", async () => {
+  const btn = $("#saveConvo");
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Encoding…";
+
+  try {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const sampleRate = actx.sampleRate;
+
+    // 0.6 s silence gap between segments
+    const GAP_SAMPLES = Math.round(sampleRate * 0.6);
+
+    // Decode each segment to a mono Float32Array
+    const decoded = [];
+    for (let i = 0; i < convoSegments.length; i++) {
+      const seg = convoSegments[i];
+      try {
+        const arrayBuf = await seg.blob.arrayBuffer();
+        const audioBuf = await actx.decodeAudioData(arrayBuf);
+        // Downmix to mono: average all channels
+        const mono = new Float32Array(audioBuf.length);
+        for (let ch = 0; ch < audioBuf.numberOfChannels; ch++) {
+          const chData = audioBuf.getChannelData(ch);
+          for (let s = 0; s < audioBuf.length; s++) {
+            mono[s] += chData[s];
+          }
+        }
+        if (audioBuf.numberOfChannels > 1) {
+          for (let s = 0; s < mono.length; s++) {
+            mono[s] /= audioBuf.numberOfChannels;
+          }
+        }
+        decoded.push(mono);
+      } catch (decodeErr) {
+        // Skip undecodable segments gracefully
+        console.warn("Skipping segment", i, decodeErr);
+        decoded.push(null);
+      }
+    }
+
+    // Calculate total length: segments + gaps between them
+    let totalSamples = 0;
+    const validDecoded = decoded.filter(d => d !== null);
+    if (validDecoded.length === 0) {
+      throw new Error("No decodable audio segments.");
+    }
+    for (let i = 0; i < decoded.length; i++) {
+      if (decoded[i] !== null) { totalSamples += decoded[i].length; }
+    }
+    // Add gaps between consecutive non-null segments
+    let prevWasValid = false;
+    for (let i = 0; i < decoded.length; i++) {
+      if (decoded[i] !== null) {
+        if (prevWasValid) { totalSamples += GAP_SAMPLES; }
+        prevWasValid = true;
+      }
+    }
+
+    // Build concatenated mono buffer
+    const combined = new Float32Array(totalSamples);
+    let writePos = 0;
+    let firstWritten = false;
+    for (let i = 0; i < decoded.length; i++) {
+      if (decoded[i] === null) { continue; }
+      if (firstWritten) {
+        // Insert silence gap
+        writePos += GAP_SAMPLES; // Float32Array is zero-initialized, so gap is silence
+      }
+      combined.set(decoded[i], writePos);
+      writePos += decoded[i].length;
+      firstWritten = true;
+    }
+
+    actx.close();
+
+    // Encode to MP3 using lamejs
+    if (!window.lamejs) { throw new Error("lamejs not loaded — check lame.min.js is served correctly."); }
+    const mp3Encoder = new window.lamejs.Mp3Encoder(1, sampleRate, 128);
+    const mp3Data = [];
+
+    // lamejs expects Int16 samples; process in chunks
+    const CHUNK = 1152; // must be multiple of 1152 for lamejs
+    // Convert Float32 -> Int16
+    const samples16 = new Int16Array(combined.length);
+    for (let i = 0; i < combined.length; i++) {
+      const v = Math.max(-1, Math.min(1, combined[i]));
+      samples16[i] = v < 0 ? v * 32768 : v * 32767;
+    }
+
+    for (let start = 0; start < samples16.length; start += CHUNK) {
+      const chunk = samples16.subarray(start, start + CHUNK);
+      const encoded = mp3Encoder.encodeBuffer(chunk);
+      if (encoded.length > 0) { mp3Data.push(encoded); }
+    }
+    const tail = mp3Encoder.flush();
+    if (tail.length > 0) { mp3Data.push(tail); }
+
+    const mp3Blob = new Blob(mp3Data, { type: "audio/mp3" });
+    const url = URL.createObjectURL(mp3Blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `conversation-${new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 2000);
+  } catch (err) {
+    alert("MP3 export failed: " + (err.message || err));
+    console.error("MP3 export error:", err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+});
 </script>
 </body>
 </html>

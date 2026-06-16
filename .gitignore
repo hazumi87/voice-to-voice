@@ -20,6 +20,9 @@ avatar/web/dist/
 working/Spicoli_SlowChad
 # Runtime render log (regenerates as you test characters)
 working/character_speak.log
+# Diagnostic / manual-run logs (regenerate at runtime)
+working/crash_trace.log
+working/server_manual.log
 
 # Large binary research/scratch assets — regenerable, not runtime deps.
 # (Global rule: don't commit large binaries; public/ assets deploy separately.)
