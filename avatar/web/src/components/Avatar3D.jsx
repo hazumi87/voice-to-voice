@@ -110,8 +110,8 @@ export default function Avatar3D() {
   const [showVisemeLabel, setShowVisemeLabel] = useState(true);
   // Facial hair (Wolf3D_Beard) is a separate mesh with NO morph targets, so it stays
   // rigid while the jaw/lips move and the open mouth clips under it. Toggle to hide it.
-  // Default OFF (beard shown — the model as-is).
-  const [hideBeard, setHideBeard] = useState(false);
+  // Default ON (beard hidden) — the rigid beard clips the open mouth, so hide it by default.
+  const [hideBeard, setHideBeard] = useState(true);
   const timelineRef = useRef([]);
   const visemeLabelsRef = useRef(FALLBACK_LABELS); // { id_string: label }
 

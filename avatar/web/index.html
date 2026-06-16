@@ -6,7 +6,10 @@
     <title>Avatar Lip-Sync PoC3</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; height: 100vh; }
+      /* Top-align + allow the page to grow and scroll (min-height, not fixed height) so the
+         nav/controls never get clipped and the full page is reachable on small/mobile screens. */
+      html { overflow-y: auto; }
+      body { background: #1a1a2e; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; overflow: auto; }
     </style>
   </head>
   <body>
