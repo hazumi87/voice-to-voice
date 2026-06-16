@@ -26,6 +26,11 @@ import urllib.parse
 import urllib.request
 import json
 
+# Reduce CUDA allocator fragmentation BEFORE torch is imported. On a contended GPU the
+# OmniVoice load needs a large contiguous block; expandable_segments lets the allocator
+# grow segments instead of failing to place one big block. Must be set pre-import.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import av  # decode arbitrary uploaded/recorded audio (mp4/AAC/webm) to a waveform
 import numpy as np
 import soundfile as sf
@@ -289,7 +294,7 @@ def _load_tts_model():
         print(f"[tts] load skipped — {_tts_load_error}", flush=True)
         return False
     try:
-        m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda", dtype=torch.float16)
+        m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda:0", dtype=torch.float16)
         tts_model = m
         TTS_SR = m.sampling_rate
         _tts_load_error = None
