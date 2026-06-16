@@ -862,20 +862,37 @@ def ref_clip_prompt(name: str):
 
 
 def load_custom_voices():
-    """Rebuild saved custom voices (clip + transcript) into clone prompts at startup."""
+    """List saved custom voices from disk and build their clone prompts.
+
+    Listing is DECOUPLED from prompt-building: a voice is always registered (so it shows
+    in /api/voices) even before OmniVoice is loaded. The GPU clone prompt is built here
+    only when the model is up; with TTS deferred it's built lazily by ensure_tts() on the
+    first synth. (Before this, a missing model made build_clone_prompt raise and the voice
+    silently vanished from the list — only presets showed.)"""
+    listed = []
     for fn in sorted(os.listdir(CUSTOM_DIR)):
         if not fn.endswith(".json"):
             continue
         try:
             meta = json.load(open(os.path.join(CUSTOM_DIR, fn), encoding="utf-8"))
-            wav, _ = sf.read(os.path.join(CUSTOM_DIR, meta["id"] + ".wav"))
-            prompt = build_clone_prompt(np.asarray(wav, dtype=np.float32), meta["ref_text"])
-            custom_voices.append({"id": meta["id"], "label": meta["label"],
-                                  "tags": "Custom", "custom": True})
-            custom_prompts[meta["id"]] = prompt
-            print(f"[init] loaded custom voice '{meta['label']}' ({meta['id']})", flush=True)
         except Exception as e:  # noqa: BLE001
-            print(f"[init] failed to load custom voice {fn}: {e}", flush=True)
+            print(f"[init] failed to read custom voice {fn}: {e}", flush=True)
+            continue
+        vid = meta.get("id")
+        if not vid:
+            continue
+        label = meta.get("label") or vid
+        # Always list the voice so the UI shows it immediately.
+        listed.append({"id": vid, "label": label, "tags": "Custom", "custom": True})
+        if tts_model is None:
+            continue  # prompt built lazily once the model loads (ensure_tts)
+        try:
+            wav, _ = sf.read(os.path.join(CUSTOM_DIR, vid + ".wav"))
+            custom_prompts[vid] = build_clone_prompt(np.asarray(wav, dtype=np.float32), meta["ref_text"])
+            print(f"[init] loaded custom voice '{label}' ({vid})", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[init] prompt build deferred/failed for {vid}: {e}", flush=True)
+    custom_voices[:] = listed  # replace in one assignment (no empty-list window)
 
 
 def ensure_tts():
