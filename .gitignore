@@ -29,3 +29,7 @@ working/blair_refs/
 working/rhubarb_refs/
 avatar/poc1/
 avatar/poc1_smiling_archive/
+
+# 3D model binaries (large; the RPM PoC glb lives in working/ + public/models/, not git)
+*.glb
+working/sketchfab_readyplayerme/

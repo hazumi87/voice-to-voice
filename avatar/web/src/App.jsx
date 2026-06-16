@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import VisemePlayer from './components/VisemePlayer.jsx'
 import PhoneticsView from './components/PhoneticsView.jsx'
+import Avatar3D from './components/Avatar3D.jsx'
 
-// Speech-to-visual prototypes. Two views behind one app:
+// Speech-to-visual prototypes. Three views behind one app:
 //   1) Player    - PoC3 PixiJS lip-sync player (audio clock -> swaps pose sprites)
 //   2) Phonetics - PoC2 alignment strip (faster-whisper word timings -> viseme timeline)
+//   3) 3D PoC    - three.js RPM head with Oculus viseme blendshapes + smooth lerp
 const TABS = [
   { id: 'player', label: 'Avatar · Lip-Sync' },
   { id: 'phonetics', label: 'Phonetics · Alignment' },
+  { id: '3d', label: 'Avatar · 3D (PoC)' },
 ]
 
 export default function App() {
@@ -74,7 +77,9 @@ export default function App() {
         </a>
       </div>
 
-      {tab === 'player' ? <VisemePlayer /> : <PhoneticsView />}
+      {tab === 'player' && <VisemePlayer />}
+      {tab === 'phonetics' && <PhoneticsView />}
+      {tab === '3d' && <Avatar3D />}
     </div>
   )
 }
