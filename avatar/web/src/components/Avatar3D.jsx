@@ -58,6 +58,13 @@ const FALLBACK_LABELS = {
   10: 'rest',
 };
 
+// Per-viseme max intensity (0..1). The active viseme eases toward THIS instead of a
+// flat 1.0, so over-strong shapes can be dialed back individually. F/V (viseme_FF) was
+// overdone — back it to half. Anything not listed defaults to 1.0.
+const VISEME_INTENSITY = {
+  viseme_FF: 0.5,   // F / V — was clipping the lip into the teeth too hard
+};
+
 // All Oculus viseme target names we care about (we drive these to 0 or 1).
 const OCULUS_TARGETS = [
   'viseme_sil', 'viseme_PP', 'viseme_FF', 'viseme_TH', 'viseme_DD',
@@ -367,7 +374,7 @@ export default function Avatar3D() {
       const k = EASE_K_PER_SEC * dt;
       const w = weightsRef.current;
       OCULUS_TARGETS.forEach((name) => {
-        const goal = name === activeTarget ? 1.0 : 0.0;
+        const goal = name === activeTarget ? (VISEME_INTENSITY[name] ?? 1.0) : 0.0;
         w[name] = w[name] + (goal - w[name]) * Math.min(k, 1.0);
       });
 
