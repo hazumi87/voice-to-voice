@@ -31,6 +31,25 @@ import json
 # grow segments instead of failing to place one big block. Must be set pre-import.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
+# ---- CRASH DIAGNOSTICS (temporary) -----------------------------------------------------
+# The TTS crash dies at the C/CUDA level with no Python traceback. Capture the actual death:
+#  - CUDA_LAUNCH_BLOCKING makes CUDA errors surface synchronously AT the failing op (not async).
+#  - TORCH_SHOW_CPP_STACKTRACES adds the C++ stack from torch.
+#  - faulthandler dumps a native traceback (all threads) on a fatal signal (SIGABRT/SIGSEGV)
+#    to working/crash_trace.log, so we see exactly where it dies. Slows GPU a bit — remove
+#    CUDA_LAUNCH_BLOCKING once the crash is captured.
+os.environ.setdefault("CUDA_LAUNCH_BLOCKING", "1")
+os.environ.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
+import faulthandler
+_HERE0 = os.path.dirname(os.path.abspath(__file__))
+try:
+    _crashf = open(os.path.join(_HERE0, "working", "crash_trace.log"), "a", buffering=1)
+    _crashf.write(f"\n==== server start {time.strftime('%Y-%m-%d %H:%M:%S')} ====\n")
+    faulthandler.enable(file=_crashf, all_threads=True)
+except Exception:  # noqa: BLE001
+    faulthandler.enable(all_threads=True)
+# ----------------------------------------------------------------------------------------
+
 import av  # decode arbitrary uploaded/recorded audio (mp4/AAC/webm) to a waveform
 import numpy as np
 import soundfile as sf
@@ -914,8 +933,44 @@ def ensure_tts():
             _refclip_cache.clear()
             load_custom_voices()
             print("[tts] recovered: model loaded + voice prompts rebuilt", flush=True)
+            # WARM-UP: OmniVoice's FIRST generate() after load mis-applies the voice clone
+            # (first render comes out as the default voice, second is correct). Do one
+            # throwaway clone generate here so the first REAL synth is already warm.
+            try:
+                if custom_prompts:
+                    _warm = next(iter(custom_prompts.values()))
+                    with gpu_guard("tts.warmup"):
+                        tts_model.generate(text="warm up.", language="English",
+                                           voice_clone_prompt=_warm, num_step=8)
+                    print("[tts] warmup generate done", flush=True)
+            except Exception as we:  # noqa: BLE001
+                print(f"[tts] warmup skipped: {we}", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"[tts] voice prompt rebuild after lazy load failed: {e}", flush=True)
+
+
+def _ensure_custom_prompt(voice_id: str):
+    """Build a custom voice's clone prompt on demand if it wasn't already cached. Guarantees
+    the FIRST synth after a (re)load uses the real cloned voice instead of falling back to the
+    default instruct voice — the 'first render is default, second is the real voice' bug."""
+    with custom_lock:
+        if voice_id in custom_prompts:
+            return custom_prompts[voice_id]
+    mp = os.path.join(CUSTOM_DIR, voice_id + ".json")
+    wp = os.path.join(CUSTOM_DIR, voice_id + ".wav")
+    if not (os.path.isfile(mp) and os.path.isfile(wp)):
+        return None
+    try:
+        meta = json.load(open(mp, encoding="utf-8"))
+        wav, _ = sf.read(wp)
+        prompt = build_clone_prompt(np.asarray(wav, dtype=np.float32), meta["ref_text"])
+        with custom_lock:
+            custom_prompts[voice_id] = prompt
+        print(f"[tts] on-demand built clone prompt for {voice_id}", flush=True)
+        return prompt
+    except Exception as e:  # noqa: BLE001
+        print(f"[tts] on-demand clone build failed for {voice_id}: {e}", flush=True)
+        return None
 
 
 def clamp_tuning(speed, guidance, temperature, steps):
@@ -970,6 +1025,11 @@ def synth(text: str, voice_id: str, num_step: int = 16, speed: float = 1.0,
     ensure_tts()
     with custom_lock:
         clone = custom_prompts.get(voice_id)
+        is_known_custom = any(v["id"] == voice_id for v in custom_voices)
+    # If it's a registered custom voice whose prompt isn't cached yet, build it NOW so the
+    # first render uses the real cloned voice instead of falling back to the default.
+    if clone is None and is_known_custom:
+        clone = _ensure_custom_prompt(voice_id)
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
                   class_temperature=class_temperature)
     with gpu_guard(f"tts.generate[{voice_id}]"):
@@ -1255,11 +1315,20 @@ def character_speak(
 
     sp, gd, tp, st = clamp_tuning(speed, guidance, temperature, steps)
     do_split = str(split_synth).lower() in ("1", "true", "yes", "on")
+    # Strip a comma before Singlish/sentence particles — OmniVoice pauses + mis-intones on
+    # the comma ("cannot, lah" -> wrong). Deterministic; complements the style instruction.
+    spoken = re.sub(r",\s+(lah|leh|lor|mah|meh|sia|hor|liao|la)\b", r" \1", spoken, flags=re.IGNORECASE)
+    # Strip stage-direction "actions" the small model emits despite being told not to
+    # (e.g. *stuttering*, *beatboxing noise*, (sighs)) — TTS reads them literally.
+    spoken = re.sub(r"\*[^*\n]*\*", " ", spoken)            # *action*
+    spoken = re.sub(r"\((?:[^()\n]{0,40})\)", " ", spoken)  # (short stage direction)
+    spoken = re.sub(r"\s{2,}", " ", spoken).strip()
     # Log what the LLM actually produced so pause/style behavior is inspectable after
-    # the fact (header x-spoken-text isn't logged; rendered clips aren't saved). Written
-    # to a dedicated file too, since harbor's stdout view interleaves streams.
+    # the fact (header x-spoken-text isn't logged; rendered clips aren't saved). Timestamped
+    # so it can be correlated with an external hardware/VRAM log around a crash.
     ndots = spoken.count("...") + spoken.count(chr(0x2026))
-    rec = f"mode={mode} split={int(do_split)} voice={voice} ellipses={ndots} spoken={spoken!r}"
+    ts = time.strftime("%H:%M:%S")
+    rec = f"{ts} mode={mode} split={int(do_split)} voice={voice} ellipses={ndots} spoken={spoken!r}"
     print(f"[character_speak] {rec}", flush=True)
     try:
         with open(os.path.join(HERE, "working", "character_speak.log"), "a", encoding="utf-8") as _f:
@@ -1591,13 +1660,34 @@ def health():
     }
 
 
+def _stt_log(msg):
+    line = f"{time.strftime('%H:%M:%S')} [stt] {msg}"
+    print(line, flush=True)
+    try:
+        with open(os.path.join(HERE, "working", "character_speak.log"), "a", encoding="utf-8") as _f:
+            _f.write(line + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @app.post("/api/stt")
 def stt(audio: UploadFile = File(...)):
-    """Transcribe one audio segment to text (no chat, no history). For Compose mode."""
+    """Transcribe one audio segment to text (no chat, no history). For Compose mode.
+
+    Heavily logged: the 'received' line is written BEFORE transcribe and the 'done' line
+    AFTER, both flushed. If a crash happens during STT we'll see 'received' with no 'done',
+    isolating the voice-input path as the trigger (vs TTS)."""
     raw = audio.file.read()
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)
-    text = transcribe(raw)
+    _stt_log(f"received {len(raw)} bytes -> transcribing...")
+    t0 = time.time()
+    try:
+        text = transcribe(raw)
+    except Exception as e:  # noqa: BLE001
+        _stt_log(f"FAILED after {time.time()-t0:.2f}s: {e!r}")
+        return JSONResponse({"error": "stt_failed", "detail": str(e)}, status_code=500)
+    _stt_log(f"done in {time.time()-t0:.2f}s -> {text!r}")
     return {"text": text}
 
 
