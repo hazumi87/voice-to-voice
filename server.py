@@ -265,6 +265,11 @@ TTS_SR = 24000              # OmniVoice sampling rate; refreshed from the model 
 tts_model = None
 _tts_load_error = None
 _tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
+# Renders since the current model instance loaded. Reset to 0 on each (re)load so we can
+# tell, per render, whether THIS was the cold first generate after a load — the state that
+# historically produced the wrong/hollow first render. Logged with every synth.
+_renders_since_load = 0
+_warmup_paths = ""          # which generate paths the post-load warmup actually exercised
 
 
 TTS_MIN_FREE_VRAM_GB = 10.5  # OmniVoice resident ~8GB; require headroom (Ollama evicted first)
@@ -933,18 +938,35 @@ def ensure_tts():
             _refclip_cache.clear()
             load_custom_voices()
             print("[tts] recovered: model loaded + voice prompts rebuilt", flush=True)
-            # WARM-UP: OmniVoice's FIRST generate() after load mis-applies the voice clone
-            # (first render comes out as the default voice, second is correct). Do one
-            # throwaway clone generate here so the first REAL synth is already warm.
+            # WARM-UP: OmniVoice's FIRST generate() after load mis-applies conditioning
+            # (the first render comes out wrong/hollow). It has TWO generate paths — clone
+            # (voice_clone_prompt=) and instruct (instruct=) — and warming one does NOT warm
+            # the other. Earlier we warmed only the clone path; a render that fell through to
+            # the instruct path was still cold. Warm BOTH so whichever path the first real
+            # render takes is already warm. Record which paths ran so a render log can show
+            # whether the warmup that should have covered it actually executed.
+            global _renders_since_load, _warmup_paths
+            _renders_since_load = 0
+            warmed = []
             try:
                 if custom_prompts:
                     _warm = next(iter(custom_prompts.values()))
-                    with gpu_guard("tts.warmup"):
+                    with gpu_guard("tts.warmup.clone"):
                         tts_model.generate(text="warm up.", language="English",
                                            voice_clone_prompt=_warm, num_step=8)
-                    print("[tts] warmup generate done", flush=True)
+                    warmed.append("clone")
             except Exception as we:  # noqa: BLE001
-                print(f"[tts] warmup skipped: {we}", flush=True)
+                print(f"[tts] warmup(clone) skipped: {we}", flush=True)
+            try:
+                _instruct = VOICE_BY_ID[DEFAULT_VOICE]["instruct"]
+                with gpu_guard("tts.warmup.instruct"):
+                    tts_model.generate(text="warm up.", language="English",
+                                       instruct=_instruct, num_step=8)
+                warmed.append("instruct")
+            except Exception as we:  # noqa: BLE001
+                print(f"[tts] warmup(instruct) skipped: {we}", flush=True)
+            _warmup_paths = "+".join(warmed) if warmed else "none"
+            print(f"[tts] warmup done (paths: {_warmup_paths})", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"[tts] voice prompt rebuild after lazy load failed: {e}", flush=True)
 
@@ -1032,6 +1054,26 @@ def synth(text: str, voice_id: str, num_step: int = 16, speed: float = 1.0,
         clone = _ensure_custom_prompt(voice_id)
     common = dict(num_step=num_step, speed=speed, guidance_scale=guidance_scale,
                   class_temperature=class_temperature)
+    path = "clone" if clone is not None else "instruct"
+    global _renders_since_load
+    _renders_since_load += 1
+    cold = _renders_since_load == 1     # first real generate since this model instance loaded
+    # One self-explaining line per render: which voice actually rendered, which generate
+    # PATH it took, whether it was the cold first-generate-since-load, and whether the
+    # warmup covered that path. When a render sounds wrong, this says why without guessing:
+    # e.g. path=instruct cold=True while you asked for a custom voice => the voice-guard
+    # bug resurfaced; cold=True warmup=clone path=instruct => warmup missed this path.
+    warm_ok = path in _warmup_paths.split("+")
+    diag = (f"voice={voice_id} requested_clone={is_known_custom} path={path} "
+            f"cold={cold} renders_since_load={_renders_since_load} "
+            f"warmup_paths={_warmup_paths} warm_covered={warm_ok} "
+            f"steps={num_step} speed={speed} guidance={guidance_scale} temp={class_temperature}")
+    print(f"[synth] {diag}", flush=True)
+    try:
+        with open(os.path.join(HERE, "working", "character_speak.log"), "a", encoding="utf-8") as _f:
+            _f.write(f"{time.strftime('%H:%M:%S')} [synth] {diag}\n")
+    except Exception:  # noqa: BLE001 — logging must never break a render
+        pass
     with gpu_guard(f"tts.generate[{voice_id}]"):
         if clone is not None:
             audios = tts_model.generate(
