@@ -9,8 +9,10 @@
 //   - Play/Pause toggle
 //   - Restart
 //   - Scrub slider
-//   - Playback speed  0.1x – 1.0x (virtual clock only, no audio pitch-shift)
+//   - Playback speed  0.1x – 1.0x (virtual clock only)
+//   - Audio plays only at 1.0x speed, synced to virtual clock
 //   - Live readout: time / duration, active viseme id + target name, speed
+//   - Forehead viseme label overlay (toggleable)
 //
 // Architecture:
 //   - three.js scene set up in a useEffect, torn down on unmount
@@ -24,6 +26,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const BASE = import.meta.env.BASE_URL;
 const MODEL_URL = `${BASE}models/rpm_head.glb`;
 const TIMELINE_URL = `${BASE}data/full_stella_timeline.json`;
+const VISEME_MAP_URL = `${BASE}data/viseme_map.json`;
+const AUDIO_URL = `${BASE}audio/full_stella.wav`;
 
 // Blair-10-numbered viseme id -> Oculus morph target name on Wolf3D_Head / Wolf3D_Teeth
 // id 7 aliases 6 (W/Q), id 10 = sil/rest
@@ -38,6 +42,20 @@ const VISEME_MAP = {
   8:  'viseme_FF',   // F / V
   9:  'viseme_nn',   // L / N
   10: 'viseme_sil',  // rest / neutral
+};
+
+// Fallback short labels if viseme_map.json doesn't load or is missing an id
+const FALLBACK_LABELS = {
+  1: 'MBP',
+  2: 'consonant',
+  3: 'eh',
+  4: 'ah',
+  5: 'O',
+  6: 'U',
+  7: 'W/Q',
+  8: 'F/V',
+  9: 'L',
+  10: 'rest',
 };
 
 // All Oculus viseme target names we care about (we drive these to 0 or 1).
@@ -59,7 +77,7 @@ const H = 480;
 export default function Avatar3D() {
   const mountRef = useRef(null);      // div that receives the renderer's canvas
   const sceneRef = useRef(null);       // { scene, camera, renderer, heads[] }
-  const clockRef = useRef({            // virtual clock (no audio in this view)
+  const clockRef = useRef({            // virtual clock
     time: 0,
     playing: false,
     speed: 0.25,
@@ -67,6 +85,8 @@ export default function Avatar3D() {
   });
   const weightsRef = useRef({});       // { targetName: currentWeight }
   const rafIdRef = useRef(null);
+  const audioRef = useRef(null);       // <audio> element ref
+  const beardRef = useRef([]);         // facial-hair meshes (rigid; hide to unclip the mouth)
 
   // React state — only for UI display, NOT the hot path
   const [status, setStatus] = useState('loading model…');
@@ -75,11 +95,37 @@ export default function Avatar3D() {
     duration: 0,
     visemeId: 10,
     targetName: 'viseme_sil',
+    src: '',
     speed: 0.25,
   });
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [showVisemeLabel, setShowVisemeLabel] = useState(true);
+  // Facial hair (Wolf3D_Beard) is a separate mesh with NO morph targets, so it stays
+  // rigid while the jaw/lips move and the open mouth clips under it. Toggle to hide it.
+  // Default OFF (beard shown — the model as-is).
+  const [hideBeard, setHideBeard] = useState(false);
   const timelineRef = useRef([]);
+  const visemeLabelsRef = useRef(FALLBACK_LABELS); // { id_string: label }
+
+  // ---------------------------------------------------------------------------
+  // Audio sync helpers
+  // ---------------------------------------------------------------------------
+  // Sync audio to the virtual clock at 1x, pause it otherwise.
+  // Called whenever play state or speed changes.
+  const syncAudio = useCallback((playing, speed, clockTime) => {
+    const audio = audioRef.current;
+    if (!audio) { return; }
+    if (playing && Math.abs(speed - 1.0) < 0.001) {
+      // Seek to match clock, then play
+      audio.currentTime = clockTime;
+      audio.play().catch(() => {
+        // Autoplay may be blocked; not fatal
+      });
+    } else {
+      audio.pause();
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Helpers exposed via callbacks (must read/write refs, not stale closure state)
@@ -88,23 +134,35 @@ export default function Avatar3D() {
     const ck = clockRef.current;
     ck.playing = !ck.playing;
     setPlaying(ck.playing);
-  }, []);
+    syncAudio(ck.playing, ck.speed, ck.time);
+  }, [syncAudio]);
 
   const restart = useCallback(() => {
-    clockRef.current.time = 0;
-    clockRef.current.playing = false;
+    const ck = clockRef.current;
+    ck.time = 0;
+    ck.playing = false;
     setPlaying(false);
-    setReadout((r) => ({ ...r, time: 0, visemeId: 10, targetName: 'viseme_sil' }));
-  }, []);
+    setReadout((r) => ({ ...r, time: 0, visemeId: 10, targetName: 'viseme_sil', src: '' }));
+    syncAudio(false, ck.speed, 0);
+  }, [syncAudio]);
 
   const seek = useCallback((t) => {
-    clockRef.current.time = t;
+    const ck = clockRef.current;
+    ck.time = t;
+    // If audio is active at 1x, re-seek it too
+    const audio = audioRef.current;
+    if (audio && !audio.paused) {
+      audio.currentTime = t;
+    }
   }, []);
 
   const setSpeed = useCallback((s) => {
-    clockRef.current.speed = s;
+    const ck = clockRef.current;
+    ck.speed = s;
     setReadout((r) => ({ ...r, speed: s }));
-  }, []);
+    // If currently playing, reconsider audio
+    syncAudio(ck.playing, s, ck.time);
+  }, [syncAudio]);
 
   // ---------------------------------------------------------------------------
   // Three.js setup + teardown
@@ -142,6 +200,26 @@ export default function Avatar3D() {
     OCULUS_TARGETS.forEach((name) => {
       weightsRef.current[name] = 0;
     });
+
+    // --- Load viseme_map.json for short labels ---
+    fetch(VISEME_MAP_URL)
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) { return; }
+        // json.visemes is expected to be an object keyed by id string: { "4": { label: "ah" }, ... }
+        if (json && json.visemes) {
+          const labels = {};
+          Object.entries(json.visemes).forEach(([idStr, entry]) => {
+            labels[idStr] = entry.label || FALLBACK_LABELS[parseInt(idStr, 10)] || idStr;
+          });
+          visemeLabelsRef.current = labels;
+          console.log('[Avatar3D] viseme_map loaded:', labels);
+        }
+      })
+      .catch((err) => {
+        console.warn('[Avatar3D] viseme_map.json failed to load, using fallback labels:', err.message);
+        // visemeLabelsRef.current remains FALLBACK_LABELS
+      });
 
     // --- Load timeline ---
     fetch(TIMELINE_URL)
@@ -187,6 +265,9 @@ export default function Avatar3D() {
               `[Avatar3D] found mesh: ${obj.name}, targets:`,
               Object.keys(obj.morphTargetDictionary).filter((k) => !k.endsWith('.001'))
             );
+          } else if (obj.isMesh && /beard|mustache|moustache/i.test(obj.name)) {
+            beardRef.current.push(obj);
+            console.log(`[Avatar3D] found facial-hair mesh: ${obj.name}`);
           }
         });
 
@@ -261,6 +342,9 @@ export default function Avatar3D() {
         if (ck.time >= (ck.duration ?? Infinity)) {
           ck.playing = false;
           setPlaying(false);
+          // Pause audio when playback ends naturally
+          const audio = audioRef.current;
+          if (audio) { audio.pause(); }
         }
       }
 
@@ -277,6 +361,7 @@ export default function Avatar3D() {
       }
       const activeVisemeId = activeEntry ? activeEntry.viseme : 10;
       const activeTarget = VISEME_MAP[activeVisemeId] ?? 'viseme_sil';
+      const activeSrc = activeEntry ? (activeEntry.src || '') : '';
 
       // Smooth lerp of all morph weights
       const k = EASE_K_PER_SEC * dt;
@@ -307,6 +392,7 @@ export default function Avatar3D() {
           duration: ck.duration ?? 0,
           visemeId: activeVisemeId,
           targetName: activeTarget,
+          src: activeSrc,
           speed: ck.speed,
         });
       }
@@ -334,10 +420,21 @@ export default function Avatar3D() {
     clockRef.current.duration = duration;
   }, [duration]);
 
+  // Apply facial-hair visibility (runs after the model loads -> status 'ready', and on toggle)
+  useEffect(() => {
+    beardRef.current.forEach((m) => { m.visible = !hideBeard; });
+  }, [hideBeard, status]);
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   const isReady = status === 'ready';
+
+  // Resolve label for current viseme id
+  const visemeLabel =
+    visemeLabelsRef.current[String(readout.visemeId)] ||
+    FALLBACK_LABELS[readout.visemeId] ||
+    String(readout.visemeId);
 
   return (
     <div
@@ -349,6 +446,10 @@ export default function Avatar3D() {
         padding: '16px',
       }}
     >
+      {/* Hidden audio element — plays only at 1x */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={audioRef} src={AUDIO_URL} preload="auto" />
+
       {/* Three.js canvas mount point */}
       <div
         ref={mountRef}
@@ -377,6 +478,32 @@ export default function Avatar3D() {
             }}
           >
             {status}
+          </div>
+        )}
+
+        {/* Forehead viseme label overlay */}
+        {isReady && showVisemeLabel && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '14px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0, 0, 0, 0.55)',
+              color: '#f0f4f8',
+              fontFamily: 'sans-serif',
+              fontWeight: 'bold',
+              fontSize: '22px',
+              padding: '6px 18px',
+              borderRadius: '20px',
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+              letterSpacing: '0.02em',
+              textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+            }}
+          >
+            {readout.visemeId} · {visemeLabel}
+            {readout.src ? ` · "${readout.src}"` : ''}
           </div>
         )}
       </div>
@@ -409,7 +536,7 @@ export default function Avatar3D() {
         />
       </div>
 
-      {/* Speed control */}
+      {/* Speed control + show-label toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'monospace', fontSize: '13px', color: '#cfd8dc' }}>
         <span>Speed:</span>
         {[0.1, 0.25, 0.5, 0.75, 1.0].map((s) => (
@@ -438,6 +565,24 @@ export default function Avatar3D() {
           title="Playback speed (0.1x – 1.0x)"
         />
         <span style={{ minWidth: '36px' }}>{readout.speed.toFixed(2)}x</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', marginLeft: '8px' }}>
+          <input
+            type="checkbox"
+            checked={showVisemeLabel}
+            onChange={(e) => setShowVisemeLabel(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          Show viseme label
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', marginLeft: '8px' }}>
+          <input
+            type="checkbox"
+            checked={hideBeard}
+            onChange={(e) => setHideBeard(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          Hide beard
+        </label>
       </div>
 
       {/* Live readout */}
@@ -457,10 +602,11 @@ export default function Avatar3D() {
           time: {readout.time.toFixed(3)}s / {readout.duration.toFixed(2)}s
         </div>
         <div>
-          viseme id: {readout.visemeId} — target: <strong>{readout.targetName}</strong>
+          viseme id: {readout.visemeId} · label: <strong>{visemeLabel}</strong> — target: <strong>{readout.targetName}</strong>
+          {readout.src ? <span style={{ color: '#7ab8d0' }}> · src: "{readout.src}"</span> : null}
         </div>
         <div style={{ color: '#7a8aa0' }}>
-          speed: {readout.speed.toFixed(2)}x · clock: virtual (RAF) ·{' '}
+          speed: {readout.speed.toFixed(2)}x · clock: {Math.abs(readout.speed - 1.0) < 0.001 ? 'audio-synced' : 'virtual (RAF)'} ·{' '}
           {playing ? 'playing' : 'paused'}
         </div>
         <div style={{ color: '#4a5a6a', fontSize: '11px', marginTop: '4px' }}>
