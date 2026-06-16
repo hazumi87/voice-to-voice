@@ -69,3 +69,20 @@
 - Dropped harbor `git` block: canonical-on-VRPC means pull is redundant and a foot-gun.
 - Speak-MCP rollout (agreed): OmniVoice added as a *selectable* engine first (neutts stays
   default), tested via explicit `engine: omnivoice`, promoted to default only after Eric approves.
+
+## 2026-06-16 — Resolved the recurring "hang"; voice fixes; TTS pre-warm; postmortem doc
+- **Root-caused the "crash"**: it was a HANG = blocked stdout write wedging the uvicorn
+  event loop (py-spy: only blocking frame was logging.flush(), zero CUDA frames). NOT a
+  CUDA/VRAM deadlock. Fixed (be10e93): TQDM_DISABLE, os.dup2 stdout/stderr -> file,
+  uvicorn access_log=False. Verified stable across many voices with both models co-resident.
+- Fixed cold first-render default+corrupted voice: guard checked custom_prompts (lazy GPU
+  cache) instead of custom_voices (metadata) -> cust_ id fell back to DEFAULT on the unwarmed
+  instruct path (086d9de); dual-path warmup + per-render [synth] diagnostics (2135be8).
+- Added background TTS pre-warm (07b398c): TTS_PREWARM=1 default -> healthy immediately +
+  fast first render; TTS_PREWARM=0 lazy; EAGER_TTS=1 legacy blocking.
+- talkback (814c745): VAD auto-stop on pause; fixed chat reply auto-play on iOS (prime
+  shared #player in-gesture, play reply through it).
+- Reverted the NVIDIA per-program Sysmem Fallback override (was never relevant; global stays
+  Driver Default for graceful VRAM spill).
+- **Key decision**: when a server "hangs", run `py-spy dump --pid` BEFORE theorizing. py-spy
+  now installed in the venv. Full postmortem + combine-prototypes watch-list in DISCOVERIES.md.
