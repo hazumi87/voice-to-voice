@@ -11,15 +11,18 @@ drive a 9-shape 2D mouth before we pay for phone-level accuracy.
 Pipeline:
   WAV (an OmniVoice clip)
     -> faster-whisper transcribe(word_timestamps=True)  -> [{word,start,end,prob}]
-    -> per word, spread visemes across [start,end] via grapheme->viseme map
-    -> insert rest (X) in the gaps between words
+    -> per word, run g2p_en to get ARPABET phones, map phones->visemes
+    -> insert rest in the gaps between words
     -> viseme timeline: [{t_start, t_end, viseme}]
+
+g2p method: g2p_en (handles OOV/names via seq2seq; ARPABET with stress digits stripped).
+Fallback: phoneme_to_viseme[""] = 10 (rest) for any unmapped phone.
 
 Run:
   .venv/Scripts/python.exe avatar/poc2_align.py full_stella.wav
   .venv/Scripts/python.exe avatar/poc2_align.py full_stella.wav --json out.json
 """
-import sys, os, json, argparse, wave, contextlib
+import sys, os, json, argparse, wave, contextlib, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -28,6 +31,9 @@ MAP_PATH = os.path.join(HERE, "viseme_map.json")
 # Minimum on-screen time for a viseme so the mouth doesn't strobe. Below this we
 # merge adjacent identical-or-tiny visemes. 60ms ~= a brisk but readable mouth flap.
 MIN_VISEME_S = 0.06
+# Epsilon for float comparison: rounded timestamps can produce 0.0599999... instead of
+# 0.06 exactly, so use a slightly-below threshold to avoid absorbing on-target frames.
+_MIN_EPS = MIN_VISEME_S - 1e-9
 
 
 def load_map():
@@ -57,20 +63,51 @@ def transcribe_words(path):
     return words
 
 
+_g2p_instance = None
+_unmapped_phones = set()
+
+def _get_g2p():
+    global _g2p_instance
+    if _g2p_instance is None:
+        from g2p_en import G2p
+        _g2p_instance = G2p()
+    return _g2p_instance
+
+
 def word_to_visemes(word, vmap):
-    """Map a whole word to an ordered list of viseme ids via the grapheme heuristic.
-    Collapses consecutive duplicate visemes (so 'mall' -> A,D,H not A,D,H,H)."""
-    g2v = vmap["grapheme_to_viseme"]
-    default = g2v["_default"]
+    """Map a whole word to an ordered list of viseme ids via phoneme->viseme mapping.
+
+    Uses g2p_en to convert the word to ARPABET phonemes, strips stress digits,
+    discards non-phone tokens (spaces, punctuation), then looks up each phone in
+    phoneme_to_viseme. Consecutive duplicate visemes are collapsed to avoid
+    visually identical back-to-back frames.
+
+    Falls back to rest (10) for any phone not in the table, and logs them.
+    """
+    p2v = vmap["phoneme_to_viseme"]
+    rest = vmap["_meta"]["rest_viseme"]
+
+    g2p = _get_g2p()
+    raw_phones = g2p(word)
+
+    # Strip stress digits, keep only uppercase ARPABET tokens (skip spaces/punct)
+    phones = []
+    for tok in raw_phones:
+        tok_clean = re.sub(r'[0-9]$', '', tok)  # strip trailing stress digit
+        if tok_clean and re.match(r'^[A-Z]+$', tok_clean):
+            phones.append(tok_clean)
+
     out = []
-    for ch in word.lower():
-        if not ch.isalpha():
-            continue
-        v = g2v.get(ch, default)
+    for ph in phones:
+        v = p2v.get(ph, None)
+        if v is None:
+            _unmapped_phones.add(ph)
+            v = rest
         if not out or out[-1] != v:
             out.append(v)
+
     if not out:
-        out = [vmap["_meta"]["rest_viseme"]]
+        out = [rest]
     return out
 
 
@@ -87,11 +124,15 @@ def build_timeline(words, total_dur, vmap):
         vis = word_to_visemes(wd["word"], vmap)
         span = max(wd["end"] - wd["start"], 1e-3)
         step = span / len(vis)
+        word_frames = []
         for i, v in enumerate(vis):
             ts = wd["start"] + i * step
             te = wd["start"] + (i + 1) * step
-            tl.append({"t_start": round(ts, 3), "t_end": round(te, 3),
-                       "viseme": v, "src": wd["word"]})
+            word_frames.append({"t_start": round(ts, 3), "t_end": round(te, 3),
+                                "viseme": v, "src": wd["word"]})
+        # Merge short frames within this word, but protect the last phoneme so
+        # word-final vowels (e.g. the AH in "stella") are never swallowed.
+        tl.extend(merge_short_protect_last(word_frames))
         cursor = wd["end"]
     # trailing rest to end of clip
     if total_dur > cursor + 1e-3:
@@ -100,9 +141,55 @@ def build_timeline(words, total_dur, vmap):
     return merge_short(tl)
 
 
+def merge_short_protect_last(tl):
+    """Like merge_short but NEVER absorbs the final frame of a word sequence.
+
+    This prevents word-final phonemes (e.g. the AH in 'stella', the R in 'store')
+    from being swallowed by the anti-strobe pass — fixing the 'missing ah' class of bug.
+    The last frame gets its t_start shifted forward to enforce MIN_VISEME_S minimum
+    rather than being dropped entirely.
+    """
+    if not tl:
+        return tl
+    if len(tl) == 1:
+        return [dict(tl[0])]
+
+    # First collapse consecutive identical visemes
+    merged = [dict(tl[0])]
+    for f in tl[1:]:
+        last = merged[-1]
+        if f["viseme"] == last["viseme"]:
+            last["t_end"] = f["t_end"]
+        else:
+            merged.append(dict(f))
+
+    if len(merged) == 1:
+        return merged
+
+    # Second pass: absorb short frames into previous, but protect the last entry
+    out = []
+    last_idx = len(merged) - 1
+    for idx, f in enumerate(merged):
+        dur = f["t_end"] - f["t_start"]
+        if idx == last_idx:
+            # Protected: ensure minimum duration by shifting t_start back if needed
+            if out and dur < _MIN_EPS:
+                borrow = MIN_VISEME_S - dur
+                f = dict(f)
+                f["t_start"] = max(out[-1]["t_start"] + MIN_VISEME_S,
+                                   f["t_start"] - borrow)
+            out.append(f)
+        elif out and dur < _MIN_EPS:
+            out[-1]["t_end"] = f["t_end"]
+        else:
+            out.append(f)
+    return out
+
+
 def merge_short(tl):
-    """Merge sub-MIN_VISEME_S frames into their neighbor of the same viseme, and
-    collapse runs of the same viseme. Keeps the timeline from strobing."""
+    """Merge sub-MIN_VISEME_S frames into their neighbor and collapse same-viseme runs.
+    Used for the full timeline (gap/rest frames between words). Word-internal frames
+    are already handled by merge_short_protect_last before reaching this pass."""
     if not tl:
         return tl
     merged = [dict(tl[0])]
@@ -115,7 +202,7 @@ def merge_short(tl):
     # second pass: absorb any still-too-short frame into the previous one
     out = []
     for f in merged:
-        if out and (f["t_end"] - f["t_start"]) < MIN_VISEME_S:
+        if out and (f["t_end"] - f["t_start"]) < _MIN_EPS:
             out[-1]["t_end"] = f["t_end"]
         else:
             out.append(f)
@@ -158,6 +245,9 @@ def main():
     print(f"\n[poc2] frames={len(tl)}  avg_frame={sum(frame_durs)/len(frame_durs)*1000:.0f}ms  "
           f"min={min(frame_durs)*1000:.0f}ms  speaking={speaking:.2f}s/{dur:.2f}s "
           f"({speaking/dur*100:.0f}% mouth-moving)")
+
+    if _unmapped_phones:
+        print(f"[poc2] WARNING: unmapped phonemes (fell back to rest): {sorted(_unmapped_phones)}")
 
     if args.json:
         outp = args.json if os.path.isabs(args.json) else os.path.join(HERE, args.json)
