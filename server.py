@@ -50,6 +50,31 @@ except Exception:  # noqa: BLE001
     faulthandler.enable(all_threads=True)
 # ----------------------------------------------------------------------------------------
 
+# ---- THE "HANG" FIX: never let a log write block the event loop --------------------------
+# Root cause (proven with py-spy on a wedged process): the ONLY blocking frame was
+# logging.flush() on the uvicorn event-loop thread. v2v's stdout/stderr was a pipe the
+# supervisor never drains; OmniVoice's tqdm progress bars flood it every render, the ~64KB
+# Windows pipe buffer fills, and the next write blocks FOREVER. uvicorn runs the whole app
+# on one asyncio thread, so a blocked access-log write wedges the entire server (port stays
+# open, VRAM held, /health -> 000). This is NOT a CUDA/VRAM deadlock -- no thread was in
+# generate()/torch/cuda. Two-part fix: (1) silence the tqdm flood; (2) route stdout/stderr
+# to a FILE at the OS fd level (covers native writes too) -- a file write doesn't block on a
+# full buffer the way an unread pipe does, so the loop can never wedge on a log line.
+os.environ.setdefault("TQDM_DISABLE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+if os.environ.get("V2V_LOG_TO_FILE", "1") == "1":
+    try:
+        _logf = open(os.path.join(_HERE0, "working", "server_v2v.log"),
+                     "a", buffering=1, encoding="utf-8", errors="replace")
+        _logf.write(f"\n==== server start {time.strftime('%Y-%m-%d %H:%M:%S')} ====\n")
+        os.dup2(_logf.fileno(), 1)   # raw stdout fd -> file (native libs writing fd 1)
+        os.dup2(_logf.fileno(), 2)   # raw stderr fd -> file (tqdm, native libs writing fd 2)
+        sys.stdout = _logf           # Python-level stdout (print, logging StreamHandler)
+        sys.stderr = _logf           # Python-level stderr
+    except Exception as _e:  # noqa: BLE001 — if redirect fails, keep default streams
+        print(f"[init] stdout/stderr file redirect failed: {_e}", flush=True)
+# ----------------------------------------------------------------------------------------
+
 import av  # decode arbitrary uploaded/recorded audio (mp4/AAC/webm) to a waveform
 import numpy as np
 import soundfile as sf
@@ -1865,4 +1890,8 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "8221"))
     print(f"[init] serving on 0.0.0.0:{port}", flush=True)
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    # access_log=False: the per-request access log line was the exact frame that wedged the
+    # event loop (py-spy: send -> logging.flush). Our endpoints already log what we need to
+    # working/*.log, so drop uvicorn's per-request chatter -- less volume, and the hot path
+    # no longer logs from the loop thread at all.
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning", access_log=False)
