@@ -1347,8 +1347,14 @@ def character_speak(
             audio = synth_split(spoken, fn) if do_split else fn(spoken)
             used_voice = f"clip:{os.path.basename(ref_clip)}"
         else:
+            # Validate against the registered-voice METADATA list (custom_voices), NOT the
+            # lazy custom_prompts cache. On a cold first render the model isn't loaded yet so
+            # custom_prompts is empty — checking it would mis-classify a real cust_ voice as
+            # unknown and silently fall back to DEFAULT_VOICE (rendering the default voice at
+            # the character's clone-tuned params -> "default + corrupted" first render).
+            # synth() lazily builds the clone prompt for a known custom id via ensure_tts().
             with custom_lock:
-                is_custom = voice in custom_prompts
+                is_custom = any(v["id"] == voice for v in custom_voices)
             if voice not in VOICE_BY_ID and not is_custom:
                 voice = DEFAULT_VOICE
             fn = lambda t: synth(t, voice, num_step=st, speed=sp,  # noqa: E731
@@ -1451,8 +1457,14 @@ def prototype_speak(
                                       guidance_scale=gd, class_temperature=tp)
             used_voice = "adhoc-wav"
         else:
+            # Validate against the registered-voice METADATA list (custom_voices), NOT the
+            # lazy custom_prompts cache. On a cold first render the model isn't loaded yet so
+            # custom_prompts is empty — checking it would mis-classify a real cust_ voice as
+            # unknown and silently fall back to DEFAULT_VOICE (rendering the default voice at
+            # the character's clone-tuned params -> "default + corrupted" first render).
+            # synth() lazily builds the clone prompt for a known custom id via ensure_tts().
             with custom_lock:
-                is_custom = voice in custom_prompts
+                is_custom = any(v["id"] == voice for v in custom_voices)
             if voice not in VOICE_BY_ID and not is_custom:
                 voice = DEFAULT_VOICE
             audio = synth(spoken, voice, num_step=st, speed=sp,
