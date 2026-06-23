@@ -5,6 +5,7 @@ __pycache__/
 
 # Runtime / user-generated data (not shipped with the app)
 custom_voices/
+speakers/          # ECAPA voiceprints + speakers.json registry (personal voice data)
 server.log
 *.wav
 
@@ -15,6 +16,15 @@ prompts.json
 # Node / build artifacts (regenerate with `cd avatar/web && npm install && npm run build`)
 node_modules/
 avatar/web/dist/
+
+# Atom Echo voice-satellite work: secrets, big binaries, build/toolchain output
+working/atom_echo/**/secrets.h
+working/atom_echo/**/secrets.yaml
+working/atom_echo/*.bin
+working/atom_echo/tools/
+working/atom_echo/**/build/
+working/atom_echo/esphome/.esphome/
+working/atom_echo/serial.log
 
 # Source voice clip (extensionless WAV; *.wav already covers the rest)
 working/Spicoli_SlowChad

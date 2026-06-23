@@ -442,6 +442,8 @@ def gpu_guard(op: str):
 history = []
 history_lock = threading.Lock()
 
+import speaker_id  # ECAPA speaker identification (closed-set personalization)
+
 app = FastAPI(title="voice-to-voice prototype")
 
 # Browser consumers (e.g. the NUC asset-library audition player at http://hazwebserver)
@@ -479,9 +481,15 @@ def transcribe(audio_bytes: bytes) -> str:
     return text
 
 
-def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY) -> str:
+def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
+         speaker_name: str = None) -> str:
     persona = PERSONALITY_BY_ID.get(personality_id, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
     system = persona["system"] + VOICE_STYLE
+    # Personalization: if speaker ID recognized who is talking, tell the agent so it
+    # can address them by name. Identification only — never gate behavior on this.
+    if speaker_name:
+        system += (f"\n\nYou are speaking with {speaker_name}. Address them by their name, "
+                   f"{speaker_name}, naturally when it fits — do not overuse it.")
     with history_lock:
         history.append({"role": "user", "content": user_text})
         messages = [{"role": "system", "content": system}] + list(history)
@@ -1203,6 +1211,13 @@ def synth_split(text: str, synth_fn, gap_ms: int = SPLIT_GAP_MS) -> bytes:
 # API
 # ---------------------------------------------------------------------------
 load_custom_voices()  # rebuild saved custom voices at startup
+
+# Speaker identification: load ECAPA + the enrolled voiceprints. Guarded — if it
+# fails (e.g. model download), v2v still serves; identify() just returns 'unknown'.
+try:
+    speaker_id.load()
+except Exception as e:  # noqa: BLE001
+    print(f"[init] speaker-id load failed (continuing without ID): {e}", flush=True)
 load_characters()     # voice+personality bundles (after voices/personalities exist)
 
 # TTS load strategy (now that the "hang" is fixed and the deferred fallback exists):
@@ -1859,6 +1874,53 @@ def reset():
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Speaker identification — enrollment CRUD + test (closed-set personalization).
+# Voiceprints live in speakers/ (gitignored). identify() also runs inside
+# /api/converse on every device utterance.
+# ---------------------------------------------------------------------------
+@app.get("/api/speakers")
+def speakers_list():
+    return JSONResponse({"ready": speaker_id.is_ready(), "speakers": speaker_id.list_speakers()})
+
+
+@app.post("/api/speakers/enroll")
+def speakers_enroll(name: str = Form(...), audio: UploadFile = File(...)):
+    entry, err = speaker_id.enroll(name, audio.file.read())
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"ok": True, "speaker": entry})
+
+
+@app.post("/api/speakers/add_clip")
+def speakers_add_clip(id: str = Form(...), audio: UploadFile = File(...)):
+    entry, err = speaker_id.add_clip(id, audio.file.read())
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"ok": True, "speaker": entry})
+
+
+@app.post("/api/speakers/rename")
+def speakers_rename(id: str = Form(...), name: str = Form(...)):
+    entry, err = speaker_id.rename(id, name)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"ok": True, "speaker": entry})
+
+
+@app.post("/api/speakers/delete")
+def speakers_delete(id: str = Form(...)):
+    ok = speaker_id.delete(id)
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/speakers/identify")
+def speakers_identify(audio: UploadFile = File(...)):
+    """Test identification on an uploaded/recorded clip (for the Enroll tab)."""
+    name, conf, detail = speaker_id.identify(audio.file.read())
+    return JSONResponse({"speaker": name, "confidence": round(conf, 3), "detail": detail})
+
+
 @app.post("/api/converse")
 def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
              personality: str = Form(DEFAULT_PERSONALITY),
@@ -1875,9 +1937,16 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
         return JSONResponse({"error": "no_speech", "detail": "Nothing transcribed."},
                             status_code=422)
 
+    # Speaker identification (closed-set, personalization only). Runs after STT for
+    # crawl simplicity — it's ~100-300ms vs seconds of total, and never raises. If
+    # recognized, the name is handed to the agent for personalization; 'unknown'
+    # changes nothing. Concurrent-with-STT is a later optimization (blueprint A/B).
+    speaker, spk_conf, spk_detail = speaker_id.identify(raw)
+    spk_name = speaker if speaker and speaker != "unknown" else None
+
     # ollama reachability is the known gaming-mode-killswitch failure point.
     try:
-        reply = chat(transcript, personality)
+        reply = chat(transcript, personality, speaker_name=spk_name)
     except Exception as e:  # noqa: BLE001
         msg = ("ollama unreachable on 127.0.0.1:11434 - has the gaming GPU-shutdown "
                ".bat been run? Restart OllamaService and retry.")
@@ -1894,14 +1963,18 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     tts_ms = int((t_tts - t_chat) * 1000)
     total_ms = int((t_tts - t0) * 1000)
     print(f"[converse] '{transcript}' -> '{reply}' "
+          f"| spk={speaker}({spk_conf:.2f},{spk_detail}) "
           f"| stt={stt_ms}ms chat={chat_ms}ms tts={tts_ms}ms total={total_ms}ms",
           flush=True)
 
     headers = {
         "X-Transcript": urllib.parse.quote(transcript),
         "X-Reply": urllib.parse.quote(reply),
+        "X-Speaker": urllib.parse.quote(speaker or "unknown"),
+        "X-Speaker-Confidence": f"{spk_conf:.3f}",
         "X-Timing": f"stt={stt_ms};chat={chat_ms};tts={tts_ms};total={total_ms}",
-        "Access-Control-Expose-Headers": "X-Transcript,X-Reply,X-Timing",
+        "Access-Control-Expose-Headers":
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Confidence,X-Timing",
     }
     return Response(content=wav, media_type="audio/wav", headers=headers)
 

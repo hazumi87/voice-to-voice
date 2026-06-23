@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Voice Enrollment — voice-to-voice</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background:#0d1117; color:#e6edf3; }
+  .nav { display:flex; gap:8px; padding:12px 16px; border-bottom:1px solid #222933; flex-wrap:wrap; }
+  .nav a { padding:7px 14px; border-radius:8px; background:#11161d; border:1px solid #2a313b;
+           color:#e6edf3; text-decoration:none; font-size:13px; }
+  .nav a.active { background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }
+  .wrap { max-width:760px; margin:0 auto; padding:20px 16px 60px; }
+  h1 { font-size:20px; margin:6px 0 2px; }
+  .sub { color:#8b949e; font-size:13px; margin:0 0 18px; }
+  .card { background:#11161d; border:1px solid #222933; border-radius:12px; padding:16px; margin:14px 0; }
+  .card h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-size:12px; color:#8b949e; margin:0 0 5px; }
+  input[type=text] { width:100%; padding:9px 11px; border-radius:8px; border:1px solid #2a313b;
+                     background:#0d1117; color:#e6edf3; font-size:14px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { padding:9px 16px; border-radius:8px; border:1px solid #2a313b; background:#1b2230;
+           color:#e6edf3; font-size:14px; cursor:pointer; }
+  button:hover { background:#222b3a; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600; }
+  button.rec.recording { background:#da3633; border-color:#da3633; color:#fff; }
+  button.danger { background:#2d1417; border-color:#5c2327; color:#ff9b95; }
+  button:disabled { opacity:.5; cursor:default; }
+  .timer { font-variant-numeric: tabular-nums; color:#8b949e; font-size:13px; min-width:48px; }
+  .hint { color:#6e7681; font-size:12px; margin-top:8px; }
+  .err { color:#ff7b72; font-size:13px; min-height:18px; margin-top:8px; }
+  .ok  { color:#3fb950; font-size:13px; min-height:18px; margin-top:8px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #1c222b; }
+  th { color:#8b949e; font-weight:500; font-size:12px; }
+  td .nm { background:transparent; border:1px solid transparent; color:#e6edf3; font-size:14px;
+           padding:4px 6px; border-radius:6px; width:100%; }
+  td .nm:focus { border-color:#2a313b; background:#0d1117; outline:none; }
+  .muted { color:#6e7681; }
+  .big-id { font-size:34px; font-weight:700; }
+  .conf { color:#8b949e; font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">◂ App</a>
+    <a href="/prototype.html">Prototype</a>
+    <a href="/talkback.html">Talk-back</a>
+    <a href="/enroll.html" class="active">Enroll</a>
+    <a href="/avatar/">Lip-Sync ▸</a>
+  </div>
+
+  <div class="wrap">
+    <h1>Voice Enrollment</h1>
+    <p class="sub">Register a person's voice so the device recognizes who's speaking and the agent
+       can address them by name. Closed-set, personalization only — never used to allow or deny anything.</p>
+
+    <!-- Enroll -->
+    <div class="card">
+      <h2>Enroll a new voice</h2>
+      <label for="name">Name</label>
+      <input type="text" id="name" placeholder="e.g. Eric" autocomplete="off" />
+      <div class="row" style="margin-top:12px">
+        <button id="enrollRec" class="rec">🎙 Record</button>
+        <span class="timer" id="enrollTimer">0.0s</span>
+        <span class="muted" style="font-size:12px">Speak naturally for ~20–30s (read anything). Press stop when done.</span>
+      </div>
+      <div class="hint">Tip: enroll in the same room / mic you'll use the device with. A clean, ~20s+ clip makes a strong voiceprint.</div>
+      <div class="err" id="enrollErr"></div>
+      <div class="ok" id="enrollOk"></div>
+    </div>
+
+    <!-- Manage -->
+    <div class="card">
+      <h2>Enrolled voices <span class="muted" id="modelState" style="font-size:12px"></span></h2>
+      <table id="tbl">
+        <thead><tr><th style="width:42%">Name</th><th>Clips</th><th>Audio</th><th style="width:230px"></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Test -->
+    <div class="card">
+      <h2>Test identification</h2>
+      <div class="row">
+        <button id="idRec" class="rec">🎙 Record &amp; identify</button>
+        <span class="timer" id="idTimer">0.0s</span>
+      </div>
+      <div id="idResult" style="margin-top:14px"></div>
+      <div class="hint">Records a short clip and runs the same matcher the device uses. Say a sentence (≥1.5s).</div>
+      <div class="err" id="idErr"></div>
+    </div>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+function pickMime() {
+  const c = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+  for (const m of c) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; }
+  return "";
+}
+function extFor(type) { return type.includes("mp4") ? "mp4" : type.includes("webm") ? "webm" : "ogg"; }
+
+// One reusable push-to-stop recorder. onBlob(blob, ext) fires after stop.
+function makeRecorder(btn, timerEl, maxMs, onBlob) {
+  let mr = null, stream = null, chunks = [], rec = false, t0 = 0, raf = 0, mime = "";
+  function tick() {
+    if (!rec) return;
+    const s = (performance.now() - t0) / 1000;
+    timerEl.textContent = s.toFixed(1) + "s";
+    if (performance.now() - t0 >= maxMs) { stop(); return; }
+    raf = requestAnimationFrame(tick);
+  }
+  async function start() {
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { onBlob(null, null, "Mic blocked — needs HTTPS (or localhost) and mic permission."); return; }
+    mime = pickMime(); chunks = [];
+    mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = () => {
+      btn.classList.remove("recording");
+      const type = (mr && mr.mimeType) || mime || "audio/mp4";
+      const blob = new Blob(chunks, { type });
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      onBlob(blob, extFor(type), null);
+    };
+    mr.start(200); rec = true; t0 = performance.now();
+    btn.classList.add("recording"); btn.textContent = "■ Stop";
+    raf = requestAnimationFrame(tick);
+  }
+  function stop() {
+    if (mr && rec) { rec = false; if (raf) cancelAnimationFrame(raf);
+      try { mr.stop(); } catch (_) {} }
+  }
+  btn.addEventListener("click", () => { if (!rec) start(); else stop(); });
+  return { reset: () => { btn.textContent = btn.dataset.idle; timerEl.textContent = "0.0s"; } };
+}
+
+// ── Enroll ────────────────────────────────────────────────────────────────
+const enrollBtn = $("#enrollRec"); enrollBtn.dataset.idle = "🎙 Record";
+makeRecorder(enrollBtn, $("#enrollTimer"), 40000, async (blob, ext, err) => {
+  enrollBtn.textContent = "🎙 Record";
+  $("#enrollErr").textContent = ""; $("#enrollOk").textContent = "";
+  if (err) { $("#enrollErr").textContent = err; return; }
+  const name = $("#name").value.trim();
+  if (!name) { $("#enrollErr").textContent = "Enter a name first, then record."; return; }
+  if (!blob || blob.size < 4000) { $("#enrollErr").textContent = "Too short — record ~20s."; return; }
+  enrollBtn.disabled = true; enrollBtn.textContent = "…uploading";
+  const fd = new FormData(); fd.append("name", name); fd.append("audio", blob, "enroll." + ext);
+  try {
+    const r = await fetch("/api/speakers/enroll", { method: "POST", body: fd });
+    const j = await r.json();
+    if (!r.ok) { $("#enrollErr").textContent = j.error || ("HTTP " + r.status); return; }
+    $("#enrollOk").textContent = `Enrolled ${j.speaker.name} (${j.speaker.seconds}s).`;
+    $("#name").value = "";
+    loadSpeakers();
+  } catch (e) { $("#enrollErr").textContent = "Upload failed: " + (e.message || e); }
+  finally { enrollBtn.disabled = false; enrollBtn.textContent = "🎙 Record"; }
+});
+
+// ── Add-clip recorder (re-enroll with a clean mic), armed per-speaker ────────
+let addClipFor = null;
+const addClipRec = (() => {
+  // hidden inline recorder reusing makeRecorder via a transient button is overkill;
+  // instead reuse the test recorder pattern on demand.
+  return null;
+})();
+
+// ── Manage list ─────────────────────────────────────────────────────────────
+async function loadSpeakers() {
+  try {
+    const r = await fetch("/api/speakers");
+    const j = await r.json();
+    $("#modelState").textContent = j.ready ? "" : "· model not loaded (ID disabled)";
+    const rows = $("#rows");
+    if (!j.speakers.length) { rows.innerHTML = `<tr><td colspan="4" class="muted">No voices enrolled yet.</td></tr>`; return; }
+    rows.innerHTML = "";
+    for (const s of j.speakers) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input class="nm" value="${s.name.replace(/"/g,'&quot;')}" data-id="${s.id}"></td>
+        <td class="muted">${s.clips}</td>
+        <td class="muted">${s.seconds}s</td>
+        <td class="row" style="justify-content:flex-end">
+          <button data-act="addclip" data-id="${s.id}" data-name="${s.name.replace(/"/g,'&quot;')}">+ Clip</button>
+          <button class="danger" data-act="del" data-id="${s.id}" data-name="${s.name.replace(/"/g,'&quot;')}">Delete</button>
+        </td>`;
+      rows.appendChild(tr);
+    }
+  } catch (e) { $("#rows").innerHTML = `<tr><td colspan="4" class="err">Failed to load: ${e.message||e}</td></tr>`; }
+}
+
+$("#rows").addEventListener("change", async (e) => {
+  if (!e.target.classList.contains("nm")) return;
+  const id = e.target.dataset.id, name = e.target.value.trim();
+  if (!name) { loadSpeakers(); return; }
+  const fd = new FormData(); fd.append("id", id); fd.append("name", name);
+  await fetch("/api/speakers/rename", { method: "POST", body: fd });
+});
+
+$("#rows").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  const id = btn.dataset.id, name = btn.dataset.name;
+  if (btn.dataset.act === "del") {
+    if (!confirm(`Delete voice "${name}"? This removes its enrollment.`)) return;
+    const fd = new FormData(); fd.append("id", id);
+    await fetch("/api/speakers/delete", { method: "POST", body: fd });
+    loadSpeakers();
+  } else if (btn.dataset.act === "addclip") {
+    armAddClip(id, name, btn);
+  }
+});
+
+// Add-clip: turn the button into a recorder for one clip.
+function armAddClip(id, name, btn) {
+  if (btn.dataset.armed) return;
+  btn.dataset.armed = "1";
+  const timer = document.createElement("span"); timer.className = "timer"; timer.textContent = "0.0s";
+  btn.after(timer);
+  btn.dataset.idle = "+ Clip";
+  const rec = makeRecorder(btn, timer, 40000, async (blob, ext, err) => {
+    btn.textContent = "+ Clip"; delete btn.dataset.armed;
+    if (err) { alert(err); timer.remove(); return; }
+    if (!blob || blob.size < 4000) { alert("Too short — record ~20s."); timer.remove(); return; }
+    btn.disabled = true; btn.textContent = "…";
+    const fd = new FormData(); fd.append("id", id); fd.append("audio", blob, "clip." + ext);
+    const r = await fetch("/api/speakers/add_clip", { method: "POST", body: fd });
+    const j = await r.json();
+    btn.disabled = false; btn.textContent = "+ Clip";
+    timer.remove();
+    if (!r.ok) { alert(j.error || ("HTTP " + r.status)); return; }
+    loadSpeakers();
+  });
+  // makeRecorder attaches its own click handler; trigger the first start now.
+  btn.click();
+}
+
+// ── Test identify ────────────────────────────────────────────────────────────
+const idBtn = $("#idRec"); idBtn.dataset.idle = "🎙 Record & identify";
+makeRecorder(idBtn, $("#idTimer"), 12000, async (blob, ext, err) => {
+  idBtn.textContent = "🎙 Record & identify";
+  $("#idErr").textContent = "";
+  if (err) { $("#idErr").textContent = err; return; }
+  if (!blob || blob.size < 1500) { $("#idErr").textContent = "Too short — say a full sentence."; return; }
+  idBtn.disabled = true; idBtn.textContent = "…identifying";
+  const fd = new FormData(); fd.append("audio", blob, "id." + ext);
+  try {
+    const r = await fetch("/api/speakers/identify", { method: "POST", body: fd });
+    const j = await r.json();
+    const known = j.speaker && j.speaker !== "unknown";
+    $("#idResult").innerHTML =
+      `<span class="big-id" style="color:${known ? '#3fb950' : '#8b949e'}">${j.speaker}</span>
+       <div class="conf">confidence ${j.confidence} · ${j.detail}</div>`;
+  } catch (e) { $("#idErr").textContent = "Identify failed: " + (e.message || e); }
+  finally { idBtn.disabled = false; idBtn.textContent = "🎙 Record & identify"; }
+});
+
+loadSpeakers();
+</script>
+</body>
+</html>
