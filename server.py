@@ -1924,10 +1924,29 @@ if os.path.isdir(_AVATAR_DIST):
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
 
+def _start_hc_heartbeat(interval=60):
+    """Self-ping harbor's injected HC_PING_URL so harbor shows green (live dead-man).
+    No-op when HC_PING_URL is unset (e.g. run outside harbor)."""
+    import urllib.request as _u
+    url = os.environ.get("HC_PING_URL")
+    if not url:
+        return
+    def _loop():
+        while True:
+            try:
+                _u.urlopen(url, timeout=5).read()
+            except Exception:
+                pass
+            time.sleep(interval)
+    threading.Thread(target=_loop, daemon=True, name="hc-heartbeat").start()
+    print(f"[hc] heartbeat -> {url} every {interval}s", flush=True)
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "8221"))
     print(f"[init] serving on 0.0.0.0:{port}", flush=True)
+    _start_hc_heartbeat()
     # access_log=False: the per-request access log line was the exact frame that wedged the
     # event loop (py-spy: send -> logging.flush). Our endpoints already log what we need to
     # working/*.log, so drop uvicorn's per-request chatter -- less volume, and the hot path
