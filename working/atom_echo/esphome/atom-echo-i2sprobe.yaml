@@ -1,0 +1,54 @@
+# I2S MIC SWEEP PROBE build. No ESPHome audio components at all -- a raw ESP-IDF
+# I2S probe (i2s_probe.h) owns I2S0 and sweeps {32,16}bit x {LEFT,RIGHT} slot,
+# logging max amplitude per config. Catches any framing/channel issue in one
+# flash, no speaking. All-zero across the sweep => electrical (power/connection).
+substitutions:
+  name: atom-echo-1
+  friendly_name: Atom Echo 1
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: false
+  min_version: 2025.5.0
+  includes:
+    - i2s_probe.h
+  on_boot:
+    priority: -100
+    then:
+      - delay: 3s
+      - lambda: 'run_i2s_probe();'
+
+esp32:
+  board: m5stack-atom
+  cpu_frequency: 240MHz
+  framework:
+    type: esp-idf
+
+logger:
+api:
+ota:
+  - platform: esphome
+    id: ota_esphome
+
+# Declared only to pull the esp_driver_i2s component (and its headers) into the
+# build. No microphone/speaker attached, so it installs no channel -- the raw
+# probe in i2s_probe.h owns I2S0 directly.
+i2s_audio:
+  - id: probe_bus
+    i2s_lrclk_pin: GPIO33
+    i2s_bclk_pin: GPIO19
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  fast_connect: true
+  ap:
+captive_portal:
+
+# Re-run the sweep every 10s so logs are easy to catch.
+interval:
+  - interval: 10s
+    then:
+      - lambda: 'run_i2s_probe();'

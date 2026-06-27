@@ -1,0 +1,313 @@
+# Atom Echo #1 — PHASE 2: full voice satellite.
+# On-device wake word (okay_nabu) -> streams utterance over the ESPHome native
+# API to our VRPC server (aioesphomeapi client) -> STT/LLM/TTS via v2v -> reply
+# audio fetched back by the media_player and played on the speaker.
+# Based on the official esphome/wake-word-voice-assistants m5stack-atom-echo.yaml,
+# trimmed to one wake model and pointed at our own API client (no Home Assistant).
+
+substitutions:
+  name: atom-echo-1
+  friendly_name: Atom Echo 1
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: false
+  min_version: 2025.5.0
+  # Boot-ready chime: an ascending C-major scale plays a few seconds after boot,
+  # so you can hear when the device is up and the speaker path is live.
+  on_boot:
+    priority: -100
+    then:
+      - delay: 3s
+      - rtttl.play: "scale:d=4,o=5,b=240:c,d,e,f,g,a,b,c6"
+
+esp32:
+  board: m5stack-atom
+  cpu_frequency: 240MHz
+  framework:
+    type: esp-idf
+
+logger:
+api:                       # bare (no encryption) — our VRPC server connects here
+ota:
+  - platform: esphome
+    id: ota_esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # ESP32 WiFi light-sleep power save is the #1 cause of intermittent ESPHome
+  # API disconnects (seen as WinError 121/64 on the bridge mid-session). Disable
+  # it so the API connection stays solid. fast_connect skips the full scan.
+  power_save_mode: none
+  fast_connect: true
+  ap:
+captive_portal:
+
+button:
+  - platform: factory_reset
+    id: factory_reset_btn
+    name: Factory reset
+  # Bench-test trigger: starts a voice-assistant run WITHOUT the wake word so we
+  # can isolate the mic from micro_wake_word. Pressable over the native API.
+  - platform: template
+    name: Start listening
+    id: start_listening_btn
+    on_press:
+      - voice_assistant.start:
+
+i2s_audio:
+  - id: i2s_audio_bus
+    i2s_lrclk_pin: GPIO33
+    i2s_bclk_pin: GPIO19
+
+# On-device test tune for speaker bench testing (double-tap the face button).
+rtttl:
+  id: tune_player
+  speaker: echo_speaker
+
+microphone:
+  - platform: i2s_audio
+    id: echo_microphone
+    i2s_din_pin: GPIO23
+    adc_type: external
+    # External ICS43434 is a STANDARD I2S mic (not PDM like the old onboard
+    # SPM1423). SEL is tied to GND -> mic data is on the LEFT channel; firmware
+    # must read LEFT to match (the wiring is the source of truth). 16-bit matches
+    # Read 32-bit: the ICS43434 clocks 24-bit data MSB-first in a 32-bit slot.
+    # 16-bit truncation came out near-silent (wake word never fired), so read the
+    # full 32-bit word and let ESPHome downscale -- the standard config for these
+    # 24-bit MEMS mics (ICS43434 / INMP441).
+    pdm: false
+    bits_per_sample: 32bit
+    # Isolation test: reading LEFT (SEL floating).
+    channel: left
+    sample_rate: 16000
+    correct_dc_offset: true
+
+speaker:
+  - platform: i2s_audio
+    id: echo_speaker
+    i2s_dout_pin: GPIO22
+    dac_type: external
+    bits_per_sample: 16bit
+    sample_rate: 16000
+    channel: stereo
+    buffer_duration: 60ms
+
+media_player:
+  - platform: speaker
+    name: None
+    id: echo_media_player
+    announcement_pipeline:
+      speaker: echo_speaker
+      format: WAV
+    buffer_size: 6000
+    volume_min: 0.4
+    on_announcement:
+      - if:
+          condition:
+            - microphone.is_capturing:
+          then:
+            - script.execute: stop_wake_word
+      - light.turn_on:
+          id: led
+          blue: 100%
+          red: 0%
+          green: 0%
+          brightness: 100%
+          effect: none
+    on_idle:
+      - script.execute: start_wake_word
+      - script.execute: reset_led
+
+voice_assistant:
+  id: va
+  micro_wake_word:
+  microphone:
+    microphone: echo_microphone
+    channels: 0
+    gain_factor: 4
+  media_player: echo_media_player
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  on_listening:
+    # Audible "mic is open" cue — a short rising two-note chirp. The blue LED pulse
+    # alone is easy to miss (esp. on the voice-only continue-conversation re-arm, where
+    # the mic re-opens on its own after a reply). Short + high so it's distinct from the
+    # boot scale / test tune and clears the mic before the user starts speaking.
+    # (Interim crutch until the brighter LED + printed case land; remove/quiet later.)
+    - rtttl.play: "listen:d=32,o=6,b=260:a6,e7"
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        effect: "Slow Pulse"
+  on_stt_vad_end:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        effect: "Fast Pulse"
+  on_tts_start:
+    - light.turn_on:
+        id: led
+        blue: 100%
+        red: 0%
+        green: 0%
+        brightness: 100%
+        effect: none
+  on_end:
+    - wait_until:
+        condition:
+          - media_player.is_announcing:
+        timeout: 0.5s
+    - if:
+        condition:
+          - lambda: |-
+              return id(wake_word_engine_location).current_option() == "On device";
+        then:
+          - wait_until:
+              - and:
+                  - not:
+                      voice_assistant.is_running:
+                  - not:
+                      speaker.is_playing:
+          - lambda: id(va).set_use_wake_word(false);
+          - micro_wake_word.start:
+    - script.execute: reset_led
+  on_error:
+    - light.turn_on:
+        id: led
+        red: 100%
+        green: 0%
+        blue: 0%
+        brightness: 100%
+        effect: none
+    - delay: 2s
+    - script.execute: reset_led
+  on_client_connected:
+    - delay: 2s
+    - script.execute: start_wake_word
+  on_client_disconnected:
+    - script.execute: stop_wake_word
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO39
+      inverted: true
+    name: Button
+    disabled_by_default: true
+    entity_category: diagnostic
+    id: echo_button
+    on_multi_click:
+      # Double-tap -> play the test tune (speaker bench test).
+      - timing:
+          - ON for at most 0.4s
+          - OFF for at most 0.4s
+          - ON for at most 0.4s
+          - OFF for at least 0.2s
+        then:
+          - rtttl.play: "test:d=4,o=5,b=160:c6,e6,g6,8c7"
+      # Single tap -> start a voice-assistant run (no wake word).
+      - timing:
+          - ON for at most 0.4s
+          - OFF for at least 0.5s
+        then:
+          - voice_assistant.start:
+      # Long hold -> factory reset.
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_btn
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: led
+    name: None
+    disabled_by_default: true
+    entity_category: config
+    pin: GPIO27
+    default_transition_length: 0s
+    chipset: SK6812
+    num_leds: 1
+    rgb_order: grb
+    effects:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 250ms
+          update_interval: 250ms
+          min_brightness: 50%
+          max_brightness: 100%
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 100ms
+          update_interval: 100ms
+          min_brightness: 50%
+          max_brightness: 100%
+
+script:
+  - id: reset_led
+    then:
+      - if:
+          condition:
+            - switch.is_on: use_listen_light
+          then:
+            - light.turn_on:
+                id: led
+                red: 0%
+                green: 0%
+                blue: 100%
+                brightness: 18%
+                effect: none
+          else:
+            - light.turn_off: led
+  - id: start_wake_word
+    then:
+      - if:
+          condition:
+            - not:
+                - voice_assistant.is_running:
+          then:
+            - lambda: id(va).set_use_wake_word(false);
+            - micro_wake_word.start:
+  - id: stop_wake_word
+    then:
+      - micro_wake_word.stop:
+
+switch:
+  - platform: template
+    name: Use listen light
+    id: use_listen_light
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    on_turn_on:
+      - script.execute: reset_led
+    on_turn_off:
+      - script.execute: reset_led
+
+# Kept so the on_end / lambdas referencing it still resolve; only "On device" is used.
+select:
+  - platform: template
+    entity_category: config
+    name: Wake word engine location
+    id: wake_word_engine_location
+    optimistic: true
+    restore_value: true
+    options:
+      - On device
+    initial_option: On device
+
+micro_wake_word:
+  on_wake_word_detected:
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+  vad:
+  models:
+    - model: okay_nabu
+      id: okay_nabu

@@ -438,9 +438,31 @@ def gpu_guard(op: str):
         gpu_lock.release()
         if dur >= GPU_WATCHDOG_WARN_S:
             print(f"[gpu] done '{op}' in {dur:.1f}s", flush=True)
-# In-memory conversation history (single session prototype).
-history = []
+# In-memory conversation history, PARTITIONED PER SPEAKER. Keyed by speaker id
+# (from speaker_id.identify); unrecognized utterances share the "guest" thread.
+# This stops overlapping users (e.g. Eric + Zachary) from contaminating each
+# other's context. {key: [ {role, content}, ... ]}.
+histories = {}
 history_lock = threading.Lock()
+
+
+def _history_for(key):
+    """Get (creating if needed) the message list for a speaker key. Caller holds lock."""
+    return histories.setdefault(key or "guest", [])
+
+
+def _resolve_speaker_voice(sel):
+    """A speaker's saved selection -> (voice_id|None, style|None).
+    'char:<id>' -> that character's voice + style (NOT bio); a plain voice id -> (id, None)."""
+    if not sel:
+        return None, None
+    if sel.startswith("char:"):
+        cid = sel[5:]
+        ch = next((c for c in CHARACTERS if c["id"] == cid), None)
+        if ch:
+            return (ch.get("voice") or None), ((ch.get("style") or "").strip() or None)
+        return None, None
+    return sel, None
 
 import speaker_id  # ECAPA speaker identification (closed-set personalization)
 
@@ -482,7 +504,8 @@ def transcribe(audio_bytes: bytes) -> str:
 
 
 def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
-         speaker_name: str = None) -> str:
+         speaker_name: str = None, history_key: str = "guest",
+         style: str = None) -> str:
     persona = PERSONALITY_BY_ID.get(personality_id, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
     system = persona["system"] + VOICE_STYLE
     # Personalization: if speaker ID recognized who is talking, tell the agent so it
@@ -490,9 +513,22 @@ def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
     if speaker_name:
         system += (f"\n\nYou are speaking with {speaker_name}. Address them by their name, "
                    f"{speaker_name}, naturally when it fits — do not overuse it.")
+    else:
+        # Unknown speaker: don't let the model invent/guess a name (it was
+        # hallucinating "Eric" for unrecognized speakers).
+        system += ("\n\nYou do not know who you are speaking with. Do NOT address them by "
+                   "any name and do NOT guess a name.")
+    # If this speaker is mapped to a CHARACTER, fold in that character's STYLE only
+    # (cadence/attitude) — NOT its bio/facts — so replies take on the character's voice.
+    if style:
+        system += f"\n\nSpeak in this style: {style}"
+    # Read/append only THIS speaker's thread so users don't cross-contaminate, and
+    # cap it to the most recent turns so context stays small.
     with history_lock:
-        history.append({"role": "user", "content": user_text})
-        messages = [{"role": "system", "content": system}] + list(history)
+        hist = _history_for(history_key)
+        hist.append({"role": "user", "content": user_text})
+        recent = hist[-(CHAT_HISTORY_TURNS * 2):]
+        messages = [{"role": "system", "content": system}] + list(recent)
     payload = json.dumps({
         "model": OLLAMA_MODEL,
         "messages": messages,
@@ -505,7 +541,7 @@ def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
         data = json.loads(resp.read())
     reply = data["message"]["content"].strip()
     with history_lock:
-        history.append({"role": "assistant", "content": reply})
+        _history_for(history_key).append({"role": "assistant", "content": reply})
     return reply
 
 
@@ -1788,7 +1824,7 @@ def health():
         "tts_sr": TTS_SR,
         "ollama": ollama_ok,
         "ollama_model": OLLAMA_MODEL,
-        "turns": len(history) // 2,
+        "turns": sum(len(h) for h in histories.values()) // 2,
     }
 
 
@@ -1870,7 +1906,7 @@ async def clientlog(request: Request, payload: dict = Body(...)):
 @app.post("/api/reset")
 def reset():
     with history_lock:
-        history.clear()
+        histories.clear()
     return {"ok": True}
 
 
@@ -1914,11 +1950,196 @@ def speakers_delete(id: str = Form(...)):
     return JSONResponse({"ok": ok})
 
 
+@app.post("/api/speakers/voice")
+def speakers_set_voice(id: str = Form(...), voice: str = Form("")):
+    """Associate a TTS voice with a speaker (agent replies in their voice)."""
+    entry, err = speaker_id.set_voice(id, voice)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"ok": True, "speaker": entry})
+
+
 @app.post("/api/speakers/identify")
 def speakers_identify(audio: UploadFile = File(...)):
     """Test identification on an uploaded/recorded clip (for the Enroll tab)."""
-    name, conf, detail = speaker_id.identify(audio.file.read())
+    name, conf, detail, _sid = speaker_id.identify(audio.file.read())
     return JSONResponse({"speaker": name, "confidence": round(conf, 3), "detail": detail})
+
+
+# ---------------------------------------------------------------------------
+# GUEST ENROLLMENT DIALOG — deterministic state machine (single satellite)
+#
+# When a device utterance is NOT identified, the agent can run a short, fully
+# DETERMINISTIC sub-dialog: ask the guest's name, match it (plain string match,
+# NO LLM) to an enrolled speaker, then capture a fresh DEVICE-MIC clip into that
+# speaker's voiceprint so future identification improves (closes the cross-mic
+# gap that makes enrolled users score 'unknown'). The LLM only ever RESTYLES the
+# phrasing — it never decides what happens (see memory deterministic-action-llm-
+# styling). Only one dialog is in flight at a time (one physical device, one
+# speaker), so a single lock-guarded state object is correct for the prototype.
+#
+#   States:  normal -> awaiting_name -> awaiting_clip(sid) -> normal
+#   The bridge re-opens the mic when a reply carries 'X-Followup-Listen: 1'.
+#
+# The guest voice/style is the DEFAULT until the user gives a recognized name;
+# from the moment of the match onward every line speaks in THAT speaker's voice +
+# character STYLE — including the "give me a voice sample" request.
+# ---------------------------------------------------------------------------
+GUEST_FLOW_TTL = 60.0          # a dialog left hanging this long auto-resets to normal
+GUEST_FLOW_MAX_CHAIN = 4       # cap re-arm hops so a confused guest can't loop forever
+_guest_flow = {"state": "normal", "sid": None, "name": None, "expires": 0.0, "chain": 0}
+_guest_flow_lock = threading.Lock()
+
+# Spoken intents (the deterministic WHAT), each as (FLOURISH, CORE):
+#  - FLOURISH: a short greeting that is safe to restyle in-character (style layer).
+#  - CORE: the actionable instruction, spoken FAITHFULLY (NOT reworded) — a small
+#    LLM will happily riff a "talk for ten seconds" request away if allowed to
+#    restyle it (measured: a strong comedic persona dropped the instruction entirely).
+#    The CORE is still spoken in the person's VOICE; only its phrasing is fixed.
+GF_ASK_NAME = ("",
+               "I'm not quite sure who I'm talking to. If you're already enrolled, just "
+               "tell me your name and I'll get reacquainted.")
+GF_MATCHED = ("Thanks, {name}!",
+              "Let me get a fresh sample of your voice so I recognize you next time. Just "
+              "keep talking to me for about ten seconds — tell me what you've been up to today.")
+GF_CLIP_OK = ("Perfect, {name}!",
+              "I've got a clearer sample of your voice now, so I should recognize you much "
+              "more reliably from here on.")
+GF_CLIP_SHORT = ("",
+                 "I only caught a moment there, {name}. Could you keep talking to me for a "
+                 "few more seconds so I can get a good sample of your voice?")
+GF_NO_MATCH = ("",
+               "Hmm, I don't have anyone enrolled by that name yet. No problem — we can keep "
+               "chatting, and you can enroll a voice on the setup page any time.")
+
+# An unknown speaker only gets interrogated if they ASK about their identity (so we
+# don't pester every borderline-unknown utterance during ordinary guest chat).
+_IDENTITY_CUES = (
+    "who am i", "do you know who i am", "do you know me", "you don't know me",
+    "you don't recognize", "don't you recognize", "recognize me", "recognize my voice",
+    "identify my voice", "identify me", "know who i am", "it's me", "this is me",
+    "remember me", "who is this", "who am i talking", "you know me", "guess who",
+)
+
+SYS_STYLE_INSTR = (
+    "You are LIGHTLY re-voicing a spoken system line to flavor it with a character's tone. "
+    "This line is functional: it may ASK the listener to do something (say their name, keep "
+    "talking for a number of seconds, etc.). You MUST preserve every instruction, question, "
+    "request, name and number from the original — do not drop them, do not replace them with "
+    "a joke or a tangent, do not answer the line yourself. Keep about the same length. Change "
+    "only word choice and rhythm to match the style. Output ONLY the re-voiced line."
+)
+
+
+def _gf_reset_locked():
+    _guest_flow.update(state="normal", sid=None, name=None, expires=0.0, chain=0)
+
+
+def _gf_get():
+    """Current flow state (a copy), auto-expiring a stale dialog. Lock-guarded."""
+    with _guest_flow_lock:
+        if _guest_flow["state"] != "normal" and time.time() > _guest_flow["expires"]:
+            _gf_reset_locked()
+        return dict(_guest_flow)
+
+
+def _gf_set(state, sid=None, name=None, chain=0):
+    with _guest_flow_lock:
+        _guest_flow.update(state=state, sid=sid, name=name, chain=chain,
+                           expires=time.time() + GUEST_FLOW_TTL)
+
+
+def _gf_reset():
+    with _guest_flow_lock:
+        _gf_reset_locked()
+
+
+def _looks_like_identity_query(t):
+    tl = (t or "").lower()
+    return any(c in tl for c in _IDENTITY_CUES)
+
+
+def _match_enrolled_name(transcript):
+    """Plain whole-word match of a transcript against enrolled speaker names.
+    Returns (sid, name) or (None, None). Deterministic — NO LLM. Matches on the
+    first token of each enrolled name ('Eric Havir' -> 'eric')."""
+    words = set(re.findall(r"[a-z0-9]+", (transcript or "").lower()))
+    if not words:
+        return None, None
+    for sp in speaker_id.list_speakers():
+        nm = (sp.get("name") or "").strip().lower()
+        if nm and nm.split()[0] in words:
+            return sp["id"], sp["name"]
+    return None, None
+
+
+# A restyle is REJECTED (fall back to verbatim) if it leaks meta-instruction words,
+# rambles, or drops a required token. Small models given a strong comedic persona will
+# regenerate a short greeting into a tangent ("I'm not Oliver, I'm Pat...") or echo the
+# transform framing ("I'm ready to revoice that line") — we never speak those.
+_STYLE_BAD_TOKENS = ("revoice", "re-voice", "original line", "the line", "as an ai",
+                     "instruction", "i'm not ", "i am not ", "sure, here", "here is",
+                     "here's the")
+
+
+def _style_line(text, style, must_keep=None):
+    """Restyle a short deterministic line with a speaker's STYLE (cadence only, no bio).
+    Returns the text VERBATIM if there's no style, styling fails, or the result fails a
+    quality guard — the literal WHAT must always survive, and we never speak garbage."""
+    text = (text or "").strip()
+    if not text or not style:
+        return text
+    try:
+        # Low temperature + a preservation-first instruction: this is a TRANSFORM, not
+        # generation. The character STYLE is tone guidance only.
+        system = f"{SYS_STYLE_INSTR}\n\nCharacter tone to apply: {style}{VOICE_STYLE}"
+        out = (_ollama_chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": text}],
+            num_predict=120, temperature=0.3,
+        ) or "").strip().strip('"')
+        low = out.lower()
+        bad = (
+            not out
+            or len(out) > max(48, len(text) * 3)            # rambled past a flourish
+            or any(tok in low for tok in _STYLE_BAD_TOKENS)  # meta-leak / refusal
+            or any(k.lower() not in low for k in (must_keep or []))  # dropped the name
+        )
+        if bad:
+            print(f"[guestflow] restyle rejected ('{out[:60]}'); verbatim", flush=True)
+            return text
+        return out
+    except Exception as e:  # noqa: BLE001
+        print(f"[guestflow] style failed ({e!r}); using verbatim", flush=True)
+        return text
+
+
+def _gf_voice_response(line, name, voice_id, style, transcript, followup, t0,
+                       speaker_label="guest", spk_conf=0.0):
+    """Compose (styled flourish + faithful core) -> synth a deterministic dialog line
+    and return the HTTP Response (mirrors converse()'s headers, adds X-Followup-Listen
+    for the bridge re-arm). Only the flourish is restyled; the core is spoken as-written."""
+    flourish, core = line
+    nm = name or "there"
+    flourish = flourish.format(name=nm) if flourish else ""
+    core = core.format(name=nm) if core else ""
+    styled = _style_line(flourish, style, must_keep=[nm] if name else None) if flourish else ""
+    spoken = (styled + " " + core).strip()
+    wav = synth(spoken, voice_id or DEFAULT_VOICE, num_step=16, speed=1.0,
+                guidance_scale=2.0, class_temperature=0.0)
+    total_ms = int((time.time() - t0) * 1000)
+    print(f"[guestflow] heard='{transcript}' -> '{spoken}' "
+          f"| as={speaker_label} followup={int(bool(followup))} | {total_ms}ms", flush=True)
+    headers = {
+        "X-Transcript": urllib.parse.quote(transcript or ""),
+        "X-Reply": urllib.parse.quote(spoken),
+        "X-Speaker": urllib.parse.quote(speaker_label),
+        "X-Speaker-Confidence": f"{spk_conf:.3f}",
+        "X-Followup-Listen": "1" if followup else "0",
+        "X-Timing": f"total={total_ms}",
+        "Access-Control-Expose-Headers":
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Confidence,X-Followup-Listen,X-Timing",
+    }
+    return Response(content=wav, media_type="audio/wav", headers=headers)
 
 
 @app.post("/api/converse")
@@ -1931,22 +2152,85 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)
 
+    flow = _gf_get()
+
+    # --- awaiting_clip: THIS utterance is the enrollment sample (no STT, no chat).
+    # Route the raw audio straight into the matched speaker's voiceprint.
+    if flow["state"] == "awaiting_clip" and flow["sid"]:
+        sid, name = flow["sid"], (flow["name"] or "there")
+        vvoice, vstyle = _resolve_speaker_voice(speaker_id.get_voice(sid))
+        entry, err = speaker_id.add_clip(sid, raw)
+        if err:
+            chain = flow["chain"] + 1
+            if "too short" in err and chain <= GUEST_FLOW_MAX_CHAIN:
+                _gf_set("awaiting_clip", sid=sid, name=name, chain=chain)
+                return _gf_voice_response(GF_CLIP_SHORT, name, vvoice, vstyle,
+                                          "(enrollment clip)", True, t0, speaker_label=name)
+            print(f"[guestflow] add_clip failed for {sid}: {err}", flush=True)
+        else:
+            print(f"[guestflow] add_clip OK for '{name}' ({sid}); "
+                  f"now {entry['clips']} clips", flush=True)
+        _gf_reset()
+        return _gf_voice_response(GF_CLIP_OK, name, vvoice, vstyle,
+                                  "(enrollment clip)", False, t0, speaker_label=name)
+
+    # Everything else needs a transcript.
     transcript = transcribe(raw)
     t_stt = time.time()
     if not transcript:
+        if flow["state"] != "normal":
+            _gf_reset()      # a blank reply mid-dialog shouldn't strand the state
         return JSONResponse({"error": "no_speech", "detail": "Nothing transcribed."},
                             status_code=422)
+
+    # --- awaiting_name: match the spoken name to an enrolled speaker (no LLM) ----
+    if flow["state"] == "awaiting_name":
+        sid, name = _match_enrolled_name(transcript)
+        if sid:
+            vvoice, vstyle = _resolve_speaker_voice(speaker_id.get_voice(sid))
+            _gf_set("awaiting_clip", sid=sid, name=name, chain=flow["chain"] + 1)
+            return _gf_voice_response(GF_MATCHED, name, vvoice, vstyle,
+                                      transcript, True, t0, speaker_label=name)
+        _gf_reset()          # unknown name -> bow out gracefully, don't loop
+        return _gf_voice_response(GF_NO_MATCH, None, DEFAULT_VOICE, None, transcript,
+                                  False, t0)
 
     # Speaker identification (closed-set, personalization only). Runs after STT for
     # crawl simplicity — it's ~100-300ms vs seconds of total, and never raises. If
     # recognized, the name is handed to the agent for personalization; 'unknown'
     # changes nothing. Concurrent-with-STT is a later optimization (blueprint A/B).
-    speaker, spk_conf, spk_detail = speaker_id.identify(raw)
+    speaker, spk_conf, spk_detail, spk_id = speaker_id.identify(raw)
     spk_name = speaker if speaker and speaker != "unknown" else None
+    # Per-speaker conversation thread (stable by id; unknown -> shared "guest").
+    history_key = spk_id or "guest"
+    # This speaker's saved selection -> reply voice (+ character style if a character).
+    spk_sel = speaker_id.get_voice(spk_id) if spk_id else ""
+    spk_voice, spk_style = _resolve_speaker_voice(spk_sel)
+    if spk_voice:
+        voice = spk_voice
+
+    # --- normal state, GUEST (unidentified): maybe OFFER the enrollment dialog ---
+    # Self-identify by name -> jump straight to clip capture in THEIR voice+style.
+    # Ask about identity -> ask their name. Otherwise answer normally (don't
+    # interrogate every borderline-unknown utterance — that would be maddening).
+    if spk_id is None:
+        sid, name = _match_enrolled_name(transcript)
+        if sid:
+            vvoice, vstyle = _resolve_speaker_voice(speaker_id.get_voice(sid))
+            _gf_set("awaiting_clip", sid=sid, name=name, chain=1)
+            return _gf_voice_response(GF_MATCHED, name, vvoice, vstyle,
+                                      transcript, True, t0, speaker_label=name,
+                                      spk_conf=spk_conf)
+        if _looks_like_identity_query(transcript):
+            _gf_set("awaiting_name", chain=1)
+            return _gf_voice_response(GF_ASK_NAME, None, DEFAULT_VOICE, None, transcript,
+                                      True, t0, spk_conf=spk_conf)
+        # else: fall through to the normal guest reply below.
 
     # ollama reachability is the known gaming-mode-killswitch failure point.
     try:
-        reply = chat(transcript, personality, speaker_name=spk_name)
+        reply = chat(transcript, personality, speaker_name=spk_name,
+                     history_key=history_key, style=spk_style)
     except Exception as e:  # noqa: BLE001
         msg = ("ollama unreachable on 127.0.0.1:11434 - has the gaming GPU-shutdown "
                ".bat been run? Restart OllamaService and retry.")
@@ -1972,9 +2256,10 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
         "X-Reply": urllib.parse.quote(reply),
         "X-Speaker": urllib.parse.quote(speaker or "unknown"),
         "X-Speaker-Confidence": f"{spk_conf:.3f}",
+        "X-Followup-Listen": "0",   # normal replies never re-arm the mic (dialog only)
         "X-Timing": f"stt={stt_ms};chat={chat_ms};tts={tts_ms};total={total_ms}",
         "Access-Control-Expose-Headers":
-            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Confidence,X-Timing",
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Confidence,X-Followup-Listen,X-Timing",
     }
     return Response(content=wav, media_type="audio/wav", headers=headers)
 

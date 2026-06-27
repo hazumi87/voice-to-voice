@@ -146,8 +146,36 @@ def decode_16k_mono(raw: bytes):
     return np.concatenate(chunks).astype(np.float32)
 
 
+def _trim_silence(wav, frame_ms=20, rel_thr=0.06, abs_thr=0.004, pad_ms=80):
+    """Trim leading/trailing low-energy audio so silence/quiet padding doesn't
+    dilute the voiceprint. Keeps interior gaps between words; only cuts the ends
+    (first..last frame whose RMS clears max(abs_thr, rel_thr*peak)). Never returns
+    empty — falls back to the original clip if nothing clears the threshold."""
+    if wav is None or len(wav) == 0:
+        return wav
+    fl = max(1, int(SR * frame_ms / 1000))
+    n = len(wav) // fl
+    if n < 2:
+        return wav
+    frames = wav[:n * fl].reshape(n, fl).astype(np.float32)
+    energy = np.sqrt((frames ** 2).mean(axis=1))
+    peak = float(energy.max())
+    if peak <= 0:
+        return wav
+    thr = max(abs_thr, rel_thr * peak)
+    voiced = np.where(energy >= thr)[0]
+    if len(voiced) == 0:
+        return wav
+    pad = int(SR * pad_ms / 1000)
+    start = max(0, voiced[0] * fl - pad)
+    end = min(len(wav), (voiced[-1] + 1) * fl + pad)
+    return wav[start:end]
+
+
 def _embed_wave(wav):
-    """wav: float32 mono @16k -> unit-norm 192-d embedding (np.ndarray)."""
+    """wav: float32 mono @16k -> unit-norm 192-d embedding (np.ndarray).
+    End-silence is trimmed first so the print reflects speech, not dead air."""
+    wav = _trim_silence(wav)
     t = torch.from_numpy(np.ascontiguousarray(wav)).float().unsqueeze(0)
     with _lock, torch.no_grad():
         emb = _model.encode_batch(t).squeeze().detach().cpu().numpy()
@@ -242,11 +270,27 @@ def delete(sid: str):
     return True
 
 
+def set_voice(sid: str, voice: str):
+    """Associate a TTS voice with a speaker (used to reply in that person's voice)."""
+    if sid not in _registry:
+        return None, "unknown speaker id"
+    _registry[sid]["voice"] = (voice or "").strip()
+    _registry[sid]["updated_at"] = int(time.time())
+    json.dump(_registry[sid], open(_meta_path(sid), "w", encoding="utf-8"), indent=2)
+    return _public(sid), None
+
+
+def get_voice(sid: str):
+    """Saved voice for a speaker id, or '' if none/unknown."""
+    return (_registry.get(sid, {}) or {}).get("voice", "")
+
+
 def _public(sid):
     m = _registry[sid]
     return {
         "id": sid,
         "name": m["name"],
+        "voice": m.get("voice", ""),
         "clips": len(m.get("clips", [])),
         "seconds": round(sum(c["seconds"] for c in m.get("clips", [])), 1),
         "enrolled_at": m.get("enrolled_at"),
@@ -263,16 +307,17 @@ def list_speakers():
 # ---------------------------------------------------------------------------
 def identify(raw: bytes):
     """Identify the speaker of an utterance.
-    Returns (name|'unknown', confidence_float, detail_str). Never raises."""
+    Returns (name|'unknown', confidence_float, detail_str, sid|None). Never raises.
+    The sid lets callers key per-speaker state (history, voice) stably by id."""
     try:
         if _model is None or not _vectors:
-            return "unknown", 0.0, "no_model" if _model is None else "no_enrollments"
+            return "unknown", 0.0, ("no_model" if _model is None else "no_enrollments"), None
         wav = decode_16k_mono(raw)
         if wav is None:
-            return "unknown", 0.0, "decode_failed"
+            return "unknown", 0.0, "decode_failed", None
         secs = len(wav) / SR
         if secs < MIN_SPEECH_S:
-            return "unknown", 0.0, f"too_short({secs:.1f}s)"
+            return "unknown", 0.0, f"too_short({secs:.1f}s)", None
         v = _embed_wave(wav)
         scored = sorted(
             ((float(np.dot(v, vec)), sid) for sid, vec in _vectors.items()),
@@ -281,10 +326,10 @@ def identify(raw: bytes):
         top_sim, top_sid = scored[0]
         second_sim = scored[1][0] if len(scored) > 1 else -1.0
         if top_sim < THRESHOLD:
-            return "unknown", top_sim, f"below_threshold({top_sim:.2f})"
+            return "unknown", top_sim, f"below_threshold({top_sim:.2f})", None
         if (top_sim - second_sim) < MARGIN:
-            return "unknown", top_sim, f"ambiguous(d={top_sim - second_sim:.2f})"
-        return _registry[top_sid]["name"], top_sim, f"match({top_sim:.2f})"
+            return "unknown", top_sim, f"ambiguous(d={top_sim - second_sim:.2f})", None
+        return _registry[top_sid]["name"], top_sim, f"match({top_sim:.2f})", top_sid
     except Exception as e:  # noqa: BLE001 — ID must never break the converse path
         print(f"[spkid] identify failed: {e!r}", flush=True)
-        return "unknown", 0.0, "error"
+        return "unknown", 0.0, "error", None

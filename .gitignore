@@ -5,7 +5,11 @@ __pycache__/
 
 # Runtime / user-generated data (not shipped with the app)
 custom_voices/
-speakers/          # ECAPA voiceprints + speakers.json registry (personal voice data)
+# ECAPA voiceprints + speakers.json registry (personal voice data).
+# NOTE: the comment MUST be on its own line — git does NOT treat a trailing '#'
+# as a comment, so 'speakers/   # ...' would be a literal pattern that ignores
+# nothing and leaks the voiceprints into `git add`.
+speakers/
 server.log
 *.wav
 
@@ -25,6 +29,8 @@ working/atom_echo/tools/
 working/atom_echo/**/build/
 working/atom_echo/esphome/.esphome/
 working/atom_echo/serial.log
+working/atom_echo/**/*.log
+working/server_v2v.log
 
 # Source voice clip (extensionless WAV; *.wav already covers the rest)
 working/Spicoli_SlowChad

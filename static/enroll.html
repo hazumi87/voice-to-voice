@@ -77,8 +77,8 @@
     <div class="card">
       <h2>Enrolled voices <span class="muted" id="modelState" style="font-size:12px"></span></h2>
       <table id="tbl">
-        <thead><tr><th style="width:42%">Name</th><th>Clips</th><th>Audio</th><th style="width:230px"></th></tr></thead>
-        <tbody id="rows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th style="width:32%">Name</th><th>Clips</th><th>Audio</th><th>Voice</th><th style="width:230px"></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -171,13 +171,41 @@ const addClipRec = (() => {
 })();
 
 // ── Manage list ─────────────────────────────────────────────────────────────
+// Options for the per-speaker "reply in this voice" dropdown, grouped:
+// Characters (value "char:<id>" -> applies the character's voice + STYLE), then
+// Custom Voices, then Default Voices (value = plain voice id). Loaded once.
+let CHARS = [], CUSTOM = [], DEFAULTS = [];
+async function loadVoices() {
+  try {
+    const [cr, vr] = await Promise.all([fetch("/api/characters"), fetch("/api/voices")]);
+    const cj = await cr.json(), vj = await vr.json();
+    CHARS = (cj.characters || []).map(c => ({ id: c.id, label: c.label || c.name || c.id }));
+    const voices = (vj.voices || []).map(v => (typeof v === "string") ? { id: v, label: v } : v);
+    CUSTOM   = voices.filter(v => v.custom);
+    DEFAULTS = voices.filter(v => !v.custom);
+  } catch (e) { CHARS = []; CUSTOM = []; DEFAULTS = []; }
+}
+function voiceOptions(selected) {
+  const esc = s => String(s).replace(/"/g, '&quot;');
+  const opt = (val, label) =>
+    `<option value="${esc(val)}"${val === selected ? " selected" : ""}>${esc(label)}</option>`;
+  const grp = (name, items, prefix = "") => items.length
+    ? `<optgroup label="${name}">` + items.map(i => opt(prefix + i.id, i.label)).join("") + `</optgroup>`
+    : "";
+  return opt("", "— default —")
+       + grp("Characters", CHARS, "char:")
+       + grp("Custom Voices", CUSTOM)
+       + grp("Default Voices", DEFAULTS);
+}
+
 async function loadSpeakers() {
   try {
+    if (!CHARS.length && !CUSTOM.length && !DEFAULTS.length) await loadVoices();
     const r = await fetch("/api/speakers");
     const j = await r.json();
     $("#modelState").textContent = j.ready ? "" : "· model not loaded (ID disabled)";
     const rows = $("#rows");
-    if (!j.speakers.length) { rows.innerHTML = `<tr><td colspan="4" class="muted">No voices enrolled yet.</td></tr>`; return; }
+    if (!j.speakers.length) { rows.innerHTML = `<tr><td colspan="5" class="muted">No voices enrolled yet.</td></tr>`; return; }
     rows.innerHTML = "";
     for (const s of j.speakers) {
       const tr = document.createElement("tr");
@@ -185,21 +213,27 @@ async function loadSpeakers() {
         <td><input class="nm" value="${s.name.replace(/"/g,'&quot;')}" data-id="${s.id}"></td>
         <td class="muted">${s.clips}</td>
         <td class="muted">${s.seconds}s</td>
+        <td><select class="voice" data-id="${s.id}">${voiceOptions(s.voice || "")}</select></td>
         <td class="row" style="justify-content:flex-end">
           <button data-act="addclip" data-id="${s.id}" data-name="${s.name.replace(/"/g,'&quot;')}">+ Clip</button>
           <button class="danger" data-act="del" data-id="${s.id}" data-name="${s.name.replace(/"/g,'&quot;')}">Delete</button>
         </td>`;
       rows.appendChild(tr);
     }
-  } catch (e) { $("#rows").innerHTML = `<tr><td colspan="4" class="err">Failed to load: ${e.message||e}</td></tr>`; }
+  } catch (e) { $("#rows").innerHTML = `<tr><td colspan="5" class="err">Failed to load: ${e.message||e}</td></tr>`; }
 }
 
 $("#rows").addEventListener("change", async (e) => {
-  if (!e.target.classList.contains("nm")) return;
-  const id = e.target.dataset.id, name = e.target.value.trim();
-  if (!name) { loadSpeakers(); return; }
-  const fd = new FormData(); fd.append("id", id); fd.append("name", name);
-  await fetch("/api/speakers/rename", { method: "POST", body: fd });
+  if (e.target.classList.contains("nm")) {
+    const id = e.target.dataset.id, name = e.target.value.trim();
+    if (!name) { loadSpeakers(); return; }
+    const fd = new FormData(); fd.append("id", id); fd.append("name", name);
+    await fetch("/api/speakers/rename", { method: "POST", body: fd });
+  } else if (e.target.classList.contains("voice")) {
+    const id = e.target.dataset.id, voice = e.target.value;
+    const fd = new FormData(); fd.append("id", id); fd.append("voice", voice);
+    await fetch("/api/speakers/voice", { method: "POST", body: fd });
+  }
 });
 
 $("#rows").addEventListener("click", async (e) => {
