@@ -19,6 +19,10 @@ esphome:
   on_boot:
     priority: -100
     then:
+      - light.turn_on:
+          id: ring
+          brightness: 100%
+          effect: "Demo Cycle"
       - delay: 3s
       - rtttl.play: "scale:d=4,o=5,b=240:c,d,e,f,g,a,b,c6"
 
@@ -191,6 +195,17 @@ voice_assistant:
     - script.execute: reset_led
   on_client_connected:
     - delay: 2s
+    # "Ready" cue: the boot scale only means "powered + speaker path works" (it's on a
+    # fixed 3s timer and plays BEFORE the bridge connects). Wake word isn't actually live
+    # until the bridge's API client connects and start_wake_word runs. This rising fifth
+    # fires at that real moment, so you know when "okay nabu" will be heard. Also re-fires
+    # whenever the bridge reconnects (e.g. after a bridge restart) -> device is live again.
+    #
+    # ORDER MATTERS: the mic + speaker share ONE I2S bus, so once start_wake_word engages
+    # continuous mic capture the bus is busy and a speaker tone goes silent. So play the
+    # tone FIRST (bus free), wait for it to finish, THEN start wake word.
+    - rtttl.play: "ready:d=8,o=5,b=180:c6,g6"
+    - delay: 0.6s
     - script.execute: start_wake_word
   on_client_disconnected:
     - script.execute: stop_wake_word
@@ -249,6 +264,79 @@ light:
           update_interval: 100ms
           min_brightness: 50%
           max_brightness: 100%
+
+  - platform: esp32_rmt_led_strip
+    id: ring
+    name: "Status Ring"
+    disabled_by_default: true
+    entity_category: config
+    pin: GPIO25
+    num_leds: 8
+    chipset: WS2812
+    rgb_order: GRB
+    default_transition_length: 0s
+    effects:
+      - addressable_lambda:
+          name: "Demo Cycle"
+          update_interval: 33ms
+          lambda: |-
+            // Standalone status-ring demo. Cycles states (5s each) with a flash
+            // between them. Independent of VA/mic/speaker. Tunables up top.
+            const int N = 8;
+            const float STATE_S = 5.0f, FLASH_S = 0.6f, SPIN_LPS = 8.0f;
+            const float TOGGLE_S = 0.15f, MAXB = 0.6f;   // MAXB = brightness cap (USB current safety)
+            const bool REVERSE = false;                  // flip if rotation looks CCW on the bench
+            // Aurora palette: 0 BOOT amber, 1 WAIT sky, 2 LISTEN lime, 3 PROC lime, 4 SPEAK violet
+            const uint8_t COL[5][3] = {
+              {251,191,36}, {56,189,248}, {198,242,78}, {198,242,78}, {169,108,239} };
+            const bool IS_SPIN[5] = { true, false, false, true, true };
+
+            static uint32_t t0 = 0;
+            if (initial_run || t0 == 0) t0 = millis();
+            float elapsed = (millis() - t0) / 1000.0f;
+            float slotLen = STATE_S + FLASH_S;
+            long slotIdx = (long)floorf(elapsed / slotLen);
+            int state = (int)(((slotIdx % 5) + 5) % 5);
+            float within = elapsed - (float)slotIdx * slotLen;
+            bool inFlash = within >= STATE_S;
+            const uint8_t* c = COL[state];
+
+            if (!inFlash) {
+              if (IS_SPIN[state]) {
+                float head = elapsed * SPIN_LPS;
+                for (int i = 0; i < N; i++) {
+                  float idx = REVERSE ? (i - head) : (head - i);
+                  float off = fmodf(fmodf(idx, (float)N) + (float)N, (float)N);
+                  float b = 1.0f - off / (float)(N - 1);
+                  if (b < 0) b = 0;
+                  b *= MAXB;
+                  it[i] = Color((uint8_t)(c[0]*b), (uint8_t)(c[1]*b), (uint8_t)(c[2]*b));
+                }
+              } else {
+                for (int i = 0; i < N; i++)
+                  it[i] = Color((uint8_t)(c[0]*MAXB), (uint8_t)(c[1]*MAXB), (uint8_t)(c[2]*MAXB));
+              }
+            } else {
+              int variant = (int)(((slotIdx % 3) + 3) % 3);
+              float ft = within - STATE_S;
+              uint8_t w = (uint8_t)(255 * MAXB);
+              if (variant == 0) {
+                for (int i = 0; i < N; i++) it[i] = Color(w, w, w);
+              } else if (variant == 1) {
+                for (int i = 0; i < N; i++)
+                  it[i] = Color((uint8_t)(c[0]*MAXB), (uint8_t)(c[1]*MAXB), (uint8_t)(c[2]*MAXB));
+              } else {
+                int phase = ((int)floorf(ft / TOGGLE_S)) & 1;
+                for (int i = 0; i < N; i++) {
+                  bool evenIsColor = (phase == 0);
+                  bool colorHere = ((i % 2) == 0) ? evenIsColor : !evenIsColor;
+                  if (colorHere)
+                    it[i] = Color((uint8_t)(c[0]*MAXB), (uint8_t)(c[1]*MAXB), (uint8_t)(c[2]*MAXB));
+                  else
+                    it[i] = Color(w, w, w);
+                }
+              }
+            }
 
 script:
   - id: reset_led

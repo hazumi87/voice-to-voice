@@ -50,6 +50,15 @@ VAD_AGGRESSIVENESS = 2            # 0..3
 SILENCE_HANG = 0.8               # seconds of non-speech after speech => end
 NO_SPEECH_TIMEOUT = 10.0          # give up if no speech ever detected
 MAX_UTTER = 15.0                  # hard cap (backstop against runaway background noise)
+# Echo-settle guard for the followup re-arm (guest enrollment capture). After we play a
+# reply via the announce path and re-open the mic (start_conversation=True), the loud
+# reply + listen chirp can still be ringing in the room — the mic and speaker sit inches
+# apart on one shared I2S bus, and at 15dB amp gain the bleed is enough to self-trigger
+# the VAD. That captured ~1s of the device's OWN audio, then closed the turn on silence
+# BEFORE the user spoke (every enrollment clip came in at 1.0s -> "too short" loop). So
+# for the run that immediately follows a followup, drop the first FOLLOWUP_GUARD_S of
+# audio: let the speaker tail/echo decay so only the user's real speech is captured.
+FOLLOWUP_GUARD_S = 0.9
 
 # Energy gate to ignore far-field background talk (e.g. a TV) that webrtcvad would
 # otherwise score as continuous speech and never let the turn end. A frame only
@@ -59,10 +68,10 @@ MAX_UTTER = 15.0                  # hard cap (backstop against runaway backgroun
 VOICED_ABS_FLOOR = 60            # absolute rms floor; below this is never "voiced"
 VOICED_PEAK_FRAC = 0.18         # ...and must clear this fraction of the running peak
 
-REPLY_GAIN = 3.0                  # boost for the external MAX98357 amp+speaker.
-                                  # Was 5.0 for the QUIET onboard speaker (x5 hard-clips
-                                  # -> rattle); 3.0 is louder than 1.5 without the buzz.
-                                  # Lower toward 1.5 if it starts distorting.
+REPLY_GAIN = 3.0                  # software boost on top of the MAX98357 hardware gain
+                                  # (GAIN pin -> GND -> 15 dB). 1x alone was too quiet, so
+                                  # back to 3.0. History: 5.0 for the quiet onboard speaker
+                                  # (x5 clipped -> rattle), 3.0 is louder than 1.5 w/o buzz.
 
 _latest_reply_wav: bytes | None = None
 
@@ -101,6 +110,8 @@ class VoiceBridge:
         self._frame_rem = bytearray()    # leftover bytes not yet a full VAD frame
         self._speech_frames = 0
         self._peak_rms = 0.0             # running loudness peak for the energy gate
+        self._next_run_guard = 0.0       # echo-settle guard to apply to the NEXT run
+        self._guard_until = 0.0          # monotonic time until which to drop input audio
 
     async def handle_start(self, conversation_id, flags, audio_settings, wake_word_phrase):
         print(f"[start] conv={conversation_id} flags={VoiceAssistantCommandFlag(flags)!r} "
@@ -115,6 +126,12 @@ class VoiceBridge:
         now = self._loop.time()
         self._start_t = now
         self._last_voice_t = now
+        # Consume any echo-settle guard armed by the preceding followup re-arm.
+        self._guard_until = now + self._next_run_guard
+        if self._next_run_guard:
+            print(f"[guard] dropping first {self._next_run_guard:.1f}s "
+                  f"(echo-settle after followup)", flush=True)
+        self._next_run_guard = 0.0
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_START, {})
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_START, {})
         if self._watchdog:
@@ -125,11 +142,16 @@ class VoiceBridge:
     async def handle_audio(self, audio: bytes, audio2=None):
         if self._processing:
             return
+        now = self._loop.time()
+        # Echo-settle guard: drop input while the speaker tail/echo from a just-played
+        # followup reply is still ringing, so it can't self-trigger the VAD and close the
+        # turn before the user speaks. Drop BEFORE buffering so the echo isn't in the clip.
+        if now < self._guard_until:
+            return
         self._audio_chunks += 1
         self._buf.extend(audio)
         # Reframe the stream into fixed 20ms frames for webrtcvad.
         self._frame_rem.extend(audio)
-        now = self._loop.time()
         while len(self._frame_rem) >= VAD_FRAME_BYTES:
             frame = bytes(self._frame_rem[:VAD_FRAME_BYTES])
             del self._frame_rem[:VAD_FRAME_BYTES]
@@ -252,6 +274,9 @@ class VoiceBridge:
             # the mic (start_conversation=True) for the user's answer. The device then
             # starts a fresh voice_assistant run (flags=0, no wake word) -> handle_start.
             self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            # Arm the echo-settle guard for the capture run the device is about to start,
+            # so the loud reply we're about to play doesn't self-trigger that run's mic.
+            self._next_run_guard = FOLLOWUP_GUARD_S
             try:
                 await self.client.send_voice_assistant_announcement_await_response(
                     media_id=url, timeout=20.0, start_conversation=True)

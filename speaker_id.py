@@ -35,7 +35,13 @@ EMBED_DIM = 192
 THRESHOLD = 0.55            # cosine floor below which it's 'unknown'
 MARGIN = 0.10              # top match must beat 2nd-best by this, else 'unknown'
 MIN_SPEECH_S = 1.2         # utterances shorter than this abstain (STT still runs)
-MIN_ENROLL_S = 6.0         # reject enrollment clips shorter than this
+MIN_ENROLL_S = 6.0         # reject a NEW speaker's first clip shorter than this
+# A supplementary clip (add_clip) only refines an existing print, so it can be far
+# shorter than a from-scratch enrollment — and we gate it on VOICED seconds (after
+# silence-trim), not raw length, so a long stretch of near-silence can't sneak in as a
+# "sample" while a short burst of real speech gets rejected. ~2.5s of speech meaningfully
+# nudges the averaged print.
+MIN_ADD_CLIP_S = 2.5
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPEAKERS_DIR = os.path.join(HERE, "speakers")
@@ -221,9 +227,14 @@ def add_clip(sid: str, raw: bytes):
     wav = decode_16k_mono(raw)
     if wav is None:
         return None, "could not decode audio"
+    # Gate on VOICED seconds (post silence-trim), not raw length: rejects a clip that's
+    # mostly silence/echo, and accepts a short real-speech burst. This is what stops both
+    # failure modes from the device re-arm — 1s of self-triggered echo AND a quiet room.
+    voiced_secs = len(_trim_silence(wav)) / SR
+    if voiced_secs < MIN_ADD_CLIP_S:
+        return None, (f"clip too short ({voiced_secs:.1f}s of speech); "
+                      f"need >= {MIN_ADD_CLIP_S:.1f}s")
     secs = len(wav) / SR
-    if secs < MIN_ENROLL_S:
-        return None, f"clip too short ({secs:.1f}s); need >= {MIN_ENROLL_S:.0f}s"
     meta = _registry[sid]
     k = len(meta["clips"])
     clip_file = f"{sid}__{k}.wav"

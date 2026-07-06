@@ -2011,6 +2011,11 @@ GF_CLIP_SHORT = ("",
 GF_NO_MATCH = ("",
                "Hmm, I don't have anyone enrolled by that name yet. No problem — we can keep "
                "chatting, and you can enroll a voice on the setup page any time.")
+# Spoken ONLY when add_clip genuinely failed (retries exhausted or a hard error). Never
+# claim success on failure — that was the bug that told Eric "Perfect!" over a silent room.
+GF_CLIP_FAIL = ("",
+                "I couldn't quite get a clean sample that time, {name} — no worries, we can "
+                "try again later. I'll keep chatting with you as usual for now.")
 
 # An unknown speaker only gets interrogated if they ASK about their identity (so we
 # don't pester every borderline-unknown utterance during ordinary guest chat).
@@ -2166,10 +2171,15 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
                 _gf_set("awaiting_clip", sid=sid, name=name, chain=chain)
                 return _gf_voice_response(GF_CLIP_SHORT, name, vvoice, vstyle,
                                           "(enrollment clip)", True, t0, speaker_label=name)
-            print(f"[guestflow] add_clip failed for {sid}: {err}", flush=True)
-        else:
-            print(f"[guestflow] add_clip OK for '{name}' ({sid}); "
-                  f"now {entry['clips']} clips", flush=True)
+            # Retries exhausted, or a hard error -> bow out HONESTLY. Do NOT fall through to
+            # GF_CLIP_OK: nothing was saved, so claiming success would be a lie (and would
+            # leave the user thinking their print improved when it didn't).
+            print(f"[guestflow] add_clip gave up for {sid}: {err}", flush=True)
+            _gf_reset()
+            return _gf_voice_response(GF_CLIP_FAIL, name, vvoice, vstyle,
+                                      "(enrollment clip)", False, t0, speaker_label=name)
+        print(f"[guestflow] add_clip OK for '{name}' ({sid}); "
+              f"now {entry['clips']} clips", flush=True)
         _gf_reset()
         return _gf_voice_response(GF_CLIP_OK, name, vvoice, vstyle,
                                   "(enrollment clip)", False, t0, speaker_label=name)
