@@ -86,3 +86,9 @@
   Driver Default for graceful VRAM spill).
 - **Key decision**: when a server "hangs", run `py-spy dump --pid` BEFORE theorizing. py-spy
   now installed in the venv. Full postmortem + combine-prototypes watch-list in DISCOVERIES.md.
+
+## 2026-07-06 — speak() device targets + character/paraphrase contract (KB cbad834f6fcf491b)
+- /synthesize gained character (voice+tuning, loud 404 on unknown), paraphrase (verbatim placeholder), sr (server-side resample, 48k for A2DP wire), pad_ms (sink-wake silence) — commit 265a946; also split out the prior session's guest-enrollment honesty fix as 6c46257
+- agent-speech-relay (NUC, commit 1bef658): target={kind:'device', id:station} pushes wire-ready WAV to HEARTHOS_PLAY_URL callback; device speech never falls back — structured error codes so HearthOS fails over to its stored cue clips (synth_unavailable = VRPC down)
+- Key decisions: push-not-pull (relay stays loopback-only), character speech never degrades to Web Speech, delivered:true only after station playback completes
+- Awaiting HearthOS: play callback endpoint → HEARTHOS_PLAY_URL into relay PM2 env
