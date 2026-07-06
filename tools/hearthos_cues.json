@@ -1,0 +1,36 @@
+[
+  {"key": "bt_connected", "text": "Speaker connected."},
+  {"key": "bt_reconnecting", "text": "Reconnecting the speaker."},
+  {"key": "bt_reconnected", "text": "Speaker reconnected."},
+  {"key": "bt_disconnected", "text": "Speaker disconnected."},
+  {"key": "bt_failed", "text": "Couldn't reach the speaker. It may be asleep — try its power button."},
+  {"key": "speaker_test", "text": "This is a test tone from Hearth. If you can hear this, the speaker is working."},
+
+  {"key": "stream_connected", "text": "Connected to the audio stream."},
+  {"key": "stream_lost", "text": "Lost the audio stream. Reconnecting."},
+  {"key": "stream_restored", "text": "Audio stream restored."},
+  {"key": "no_speakers", "text": "No speakers are listening right now."},
+
+  {"key": "spotify_disconnected", "text": "Spotify disconnected from Hearth."},
+  {"key": "spotify_reconnect_needed", "text": "Spotify needs reconnecting. Pick Hearth in your Spotify app."},
+  {"key": "spotify_recovered", "text": "Spotify connection restored."},
+
+  {"key": "account_switched_eric", "text": "Now playing for Eric."},
+  {"key": "account_switched_tina", "text": "Now playing for Tina."},
+  {"key": "account_switched_emily", "text": "Now playing for Emily."},
+  {"key": "account_switched_generic", "text": "Account switched."},
+
+  {"key": "takeover_eric", "text": "This speaker moved to Eric."},
+  {"key": "takeover_tina", "text": "This speaker moved to Tina."},
+  {"key": "takeover_emily", "text": "This speaker moved to Emily."},
+  {"key": "takeover", "text": "This speaker was taken over."},
+  {"key": "takeover_generic", "text": "Speaker handed off."},
+
+  {"key": "startup", "text": "Hearth is ready."},
+  {"key": "deadman_idle", "text": "No one's listening. Pausing to save the room."},
+  {"key": "party_started", "text": "Party mode on. Everyone can add to the queue."},
+  {"key": "party_ended", "text": "Party mode off."},
+
+  {"key": "diag_direct", "text": "Playing directly to this device, bypassing the stream."},
+  {"key": "diag_marker", "text": "Hearth audio check. One. Two. Three."}
+]

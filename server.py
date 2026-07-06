@@ -1243,6 +1243,43 @@ def synth_split(text: str, synth_fn, gap_ms: int = SPLIT_GAP_MS) -> bytes:
     return buf.getvalue()
 
 
+def find_character(key: str):
+    """Resolve a caller-supplied character name to a CHARACTERS entry.
+    Matches id/title/label/name case-insensitively; None when unknown."""
+    k = (key or "").strip().lower()
+    if not k:
+        return None
+    for c in CHARACTERS:
+        if k in (c["id"].lower(), c["title"].lower(), c["label"].lower(), c["name"].lower()):
+            return c
+    return None
+
+
+def postprocess_wav(wav_bytes: bytes, out_sr, pad_ms: int) -> bytes:
+    """Resample / pad a rendered WAV for delivery targets that need a specific wire
+    format (the speak relay's device leg wants 48 kHz + A2DP-wake padding so the thin
+    Pi endpoint never resamples — the spare compute lives on this box). Decode to
+    float, polyphase-resample, pad head+tail with silence, re-encode 16-bit PCM WAV.
+    Returns the input untouched when there is nothing to do."""
+    if not out_sr and not pad_ms:
+        return wav_bytes
+    data, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32", always_2d=False)
+    if data.ndim > 1:
+        data = data.mean(axis=1)
+    target = int(out_sr or sr)
+    if target != sr:
+        from math import gcd  # lazy: only this path needs them
+        from scipy.signal import resample_poly
+        g = gcd(target, sr)
+        data = resample_poly(data, target // g, sr // g).astype(np.float32)
+    if pad_ms:
+        pad = np.zeros(int(target * pad_ms / 1000), dtype=np.float32)
+        data = np.concatenate([pad, data, pad])
+    buf = io.BytesIO()
+    sf.write(buf, data, target, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -1760,31 +1797,71 @@ def synthesize(payload: dict = Body(...)):
     voice-to-voice as a drop-in synth tier (engine=omnivoice).
 
     Contract mirrors neutts-synth's POST /synthesize: JSON in, raw WAV bytes out.
-    Body: {text, voice?, speed?, guidance?, temperature?, steps?}. `voice` is an
-    OmniVoice voice id (preset like 'f_us' or a saved custom voice); unknown/absent
-    falls back to DEFAULT_VOICE so a bad voice name never fails the speak path.
+    Body: {text, voice?, character?, paraphrase?, speed?, guidance?, temperature?,
+    steps?, sr?, pad_ms?}.
+    - voice: an OmniVoice voice id (preset like 'f_us' or a saved custom voice);
+      unknown/absent falls back to DEFAULT_VOICE so a bad voice name never fails
+      the speak path.
+    - character: a saved character id/name (e.g. 'jerma') -> that character's voice
+      + saved tuning (explicit voice/tuning fields in the payload still override).
+      Unknown character is a 404 with the known list, NOT a silent default-voice
+      fallback: device-cue callers need a wrong name to fail loudly, not to ship a
+      cue in the wrong voice.
+    - paraphrase: reserved for a future in-character reword() pass. Accepted today
+      so callers can already send it; currently ALWAYS renders verbatim and the
+      response reports x-paraphrased: false.
+    - sr: output sample rate in Hz (8000-48000). E.g. 48000 for the bluealsa/A2DP
+      device leg; resampled server-side from the native 24 kHz render.
+    - pad_ms: silence (0-2000 ms) prepended AND appended — A2DP sinks wake slowly
+      and clip the first word without lead-in.
     The x-synth-device header lets the relay log which device rendered it.
     """
     text = (payload.get("text") or "").strip()
     if not text:
         return JSONResponse({"error": "empty_text"}, status_code=400)
-    voice = payload.get("voice") or DEFAULT_VOICE
+    char = None
+    char_key = (payload.get("character") or "").strip()
+    if char_key:
+        char = find_character(char_key)
+        if char is None:
+            return JSONResponse({"error": "unknown_character", "character": char_key,
+                                 "known": [c["id"] for c in CHARACTERS]},
+                                status_code=404)
+    voice = payload.get("voice") or (char["voice"] if char else None) or DEFAULT_VOICE
     with custom_lock:
-        is_custom = voice in custom_prompts
+        is_custom = voice in custom_prompts or any(v["id"] == voice for v in custom_voices)
     if voice not in VOICE_BY_ID and not is_custom:
         voice = DEFAULT_VOICE  # tolerate unknown voice names from the relay
-    # Optional generation tuning, clamped to safe ranges (same as /api/preview).
-    sp, gd, tp, st = clamp_tuning(
-        float(payload.get("speed", 1.0)),
-        float(payload.get("guidance", 2.0)),
-        float(payload.get("temperature", 0.0)),
-        int(payload.get("steps", 32)),
-    )
+    paraphrase = bool(payload.get("paraphrase", False))
+    if paraphrase:
+        # Contract placeholder: the reword() pass isn't wired into this endpoint yet.
+        print("[synthesize] paraphrase requested but not enabled — rendering verbatim", flush=True)
+    tuning = char["tuning"] if char else {}
+    try:
+        # Optional generation tuning, clamped to safe ranges (same as /api/preview).
+        sp, gd, tp, st = clamp_tuning(
+            float(payload.get("speed", tuning.get("speed", 1.0))),
+            float(payload.get("guidance", tuning.get("guidance", 2.0))),
+            float(payload.get("temperature", tuning.get("temperature", 0.0))),
+            int(payload.get("steps", tuning.get("steps", 32))),
+        )
+        out_sr = payload.get("sr")
+        if out_sr is not None:
+            out_sr = max(8000, min(48000, int(out_sr)))
+        pad_ms = max(0, min(2000, int(payload.get("pad_ms", 0) or 0)))
+    except (TypeError, ValueError) as e:
+        return JSONResponse({"error": "invalid_param", "detail": str(e)}, status_code=400)
     wav = synth(text[:2000], voice, num_step=st, speed=sp,
                 guidance_scale=gd, class_temperature=tp)
-    return Response(content=wav, media_type="audio/wav",
-                    headers={"Cache-Control": "no-store",
-                             "x-synth-device": f"cuda:omnivoice"})
+    wav = postprocess_wav(wav, out_sr, pad_ms)
+    headers = {"Cache-Control": "no-store",
+               "x-synth-device": "cuda:omnivoice",
+               "x-voice": voice,
+               "x-sample-rate": str(out_sr or TTS_SR),
+               "x-paraphrased": "false"}
+    if char is not None:
+        headers["x-character"] = char["id"]
+    return Response(content=wav, media_type="audio/wav", headers=headers)
 
 
 @app.get("/health")
