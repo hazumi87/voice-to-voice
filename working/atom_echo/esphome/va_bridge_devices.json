@@ -1,0 +1,28 @@
+{
+  "_comment": "va_bridge device roster. Static name (agents must predict it). Edit + restart bridge.",
+  "converse_url": "http://127.0.0.1:8221/api/converse",
+  "server_public_ip": "192.168.1.35",
+  "server_port": 8222,
+  "devices": [
+    {
+      "id": "atom-echo-1",
+      "discovery": "static",
+      "host": "atom-echo-1.local",
+      "port": 6053,
+      "password": "",
+      "reply_gain": 3.0,
+      "enabled": true
+    },
+    {
+      "id": "echo-dot-biscuit",
+      "discovery": "mdns",
+      "mdns_instance_prefix": "echomuse-",
+      "mdns_instance": "",
+      "mdns_port_min": 16001,
+      "mdns_port_max": 16999,
+      "password": "",
+      "reply_gain": 1.0,
+      "enabled": true
+    }
+  ]
+}

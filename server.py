@@ -2228,8 +2228,14 @@ def _gf_voice_response(line, name, voice_id, style, transcript, followup, t0,
 def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
              personality: str = Form(DEFAULT_PERSONALITY),
              speed: float = Form(1.0), guidance: float = Form(2.0),
-             temperature: float = Form(0.0), steps: int = Form(16)):
+             temperature: float = Form(0.0), steps: int = Form(16),
+             device: str = Form("")):
+    # `device`: originating endpoint id (va_bridge sends it on every request per the
+    # home-automation contract, 2026-09-20). Logged now; per-device session state keys
+    # on it when the state server lands. Do not remove — endpoints already send it.
     t0 = time.time()
+    if device:
+        print(f"[converse] device={device}", flush=True)
     raw = audio.file.read()
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)

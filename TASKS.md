@@ -92,3 +92,10 @@
 - agent-speech-relay (NUC, commit 1bef658): target={kind:'device', id:station} pushes wire-ready WAV to HEARTHOS_PLAY_URL callback; device speech never falls back — structured error codes so HearthOS fails over to its stored cue clips (synth_unavailable = VRPC down)
 - Key decisions: push-not-pull (relay stays loopback-only), character speech never degrades to Web Speech, delivered:true only after station playback completes
 - Awaiting HearthOS: play callback endpoint → HEARTHOS_PLAY_URL into relay PM2 env
+
+## 2026-09-20 — va_bridge multi-device refactor for EchoMuse Dot (contract t:7d41c9e2)
+- Contract with home-automation ratified + Eric-approved: Echo Dot 2 (EchoMuse, amonet v1.1.0/FireOS 5) as second voice endpoint; seam = ESPHome native API socket; full contract in F:\agent-share\relay\home-automation--voice-to-voice\
+- va_bridge.py refactored: device roster in va_bridge_devices.json (static name); per-device task with capped-exponential reconnect (EchoMuse per-device port vanishes when Dot disconnects); mDNS discovery matches instance prefix `echomuse-` AND port range 16001-16999 (never service type alone — their BLE proxy shares _esphomelib._tcp on 17001+); device id sent on every /api/converse POST; per-device reply URLs /reply/<id>.wav (+legacy /reply.wav); per-device reply_gain (3.0 Atom Echo / 1.0 Dot until tuned)
+- server.py /api/converse: accepts+logs `device` form field; per-device session state deferred to the NUC state-server milestone (ratified)
+- Key decisions: keep full HA event superset (EchoMuse uses STT_END{text} to stop its mic feed — trimming would reintroduce their issue #343); ERROR→RUN_END kept (handled as dead turn); end-of-speech decision stays bridge-side (codified in contract)
+- Smoke-tested: compile OK, HTTP up on :8222, both device tasks retry correctly with no hardware present. Real pairing awaits their controller.
