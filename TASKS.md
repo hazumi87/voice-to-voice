@@ -111,3 +111,8 @@
 - Eric enrolled through the Dot mic via the voice-only flow (print now 5 clips/54.7s); next turn identified Eric(0.60) and replied in his Jerma character voice. Full acceptance path proven: wake -> capture -> ECAPA reco -> personalized reply -> Dot playback, all local.
 - Barge-in/'Thank you.' incident root-caused: controller barge (likely self-hearing, their AEC investigation) + Whisper hallucination on near-silence; mitigated by d67c719 anti-hallucination gate.
 - Next: M2 latency (LLM dominates, 10-15s totals); their AEC + rings answers; custom wake phrase theirs.
+
+## 2026-09-21 — Recognition robustness: best-clip matching + device sticky sessions
+- speaker_id: identify() now scores each speaker by their BEST single clip, not the mean centroid — cross-mic enrollment (browser/Atom Echo/Dot) no longer dilutes; Eric measured 0.5498 vs 0.55 threshold downstairs under the centroid.
+- Device sticky sessions (Eric's design): once recognized at full threshold on a device, next turns within 300s accept the SAME top-matching speaker down to 0.40 — stops mid-conversation voice flip-flop. Sticky never applies to a non-top-match; fresh sessions need full threshold; noise scores ~0.05-0.09.
+- /api/converse log line now carries dev=<device id> (bridge sends it since 921ff94; server restart finally picked the field up).

@@ -2224,6 +2224,17 @@ def _gf_voice_response(line, name, voice_id, style, transcript, followup, t0,
     return Response(content=wav, media_type="audio/wav", headers=headers)
 
 
+# Device recognition sessions (Eric, 2026-09-21): once a speaker is recognized on a
+# device at full threshold, their NEXT turns on that device within the TTL accept at
+# the lower sticky floor (only while they remain the top match — see
+# speaker_id.identify) so mid-conversation score dips don't flip the reply voice
+# back and forth. In-process state is fine at crawl: one engine instance owns all
+# devices; this moves to the NUC state server with the rest of session state.
+_device_sessions: dict = {}
+DEVICE_SESSION_TTL_S = 300          # sliding window; each recognized turn extends it
+STICKY_THRESHOLD = 0.40             # session speaker floor; noise scores ~0.05-0.09
+
+
 @app.post("/api/converse")
 def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
              personality: str = Form(DEFAULT_PERSONALITY),
@@ -2231,11 +2242,9 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
              temperature: float = Form(0.0), steps: int = Form(16),
              device: str = Form("")):
     # `device`: originating endpoint id (va_bridge sends it on every request per the
-    # home-automation contract, 2026-09-20). Logged now; per-device session state keys
-    # on it when the state server lands. Do not remove — endpoints already send it.
+    # home-automation contract, 2026-09-20). Keys the sticky recognition session
+    # below; fuller per-device state moves to the NUC state server later.
     t0 = time.time()
-    if device:
-        print(f"[converse] device={device}", flush=True)
     raw = audio.file.read()
     if not raw:
         return JSONResponse({"error": "empty audio"}, status_code=400)
@@ -2292,7 +2301,14 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     # crawl simplicity — it's ~100-300ms vs seconds of total, and never raises. If
     # recognized, the name is handed to the agent for personalization; 'unknown'
     # changes nothing. Concurrent-with-STT is a later optimization (blueprint A/B).
-    speaker, spk_conf, spk_detail, spk_id = speaker_id.identify(raw)
+    sess = _device_sessions.get(device) if device else None
+    sticky_sid = (sess["sid"] if sess and (time.time() - sess["t"]) < DEVICE_SESSION_TTL_S
+                  else None)
+    speaker, spk_conf, spk_detail, spk_id = speaker_id.identify(
+        raw, sticky_sid=sticky_sid, sticky_floor=STICKY_THRESHOLD)
+    if device and spk_id:
+        # Any successful identification (full or sticky) opens/extends the session.
+        _device_sessions[device] = {"sid": spk_id, "t": time.time()}
     spk_name = speaker if speaker and speaker != "unknown" else None
     # Per-speaker conversation thread (stable by id; unknown -> shared "guest").
     history_key = spk_id or "guest"
@@ -2340,7 +2356,7 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     tts_ms = int((t_tts - t_chat) * 1000)
     total_ms = int((t_tts - t0) * 1000)
     print(f"[converse] '{transcript}' -> '{reply}' "
-          f"| spk={speaker}({spk_conf:.2f},{spk_detail}) "
+          f"| spk={speaker}({spk_conf:.2f},{spk_detail}) dev={device or '-'} "
           f"| stt={stt_ms}ms chat={chat_ms}ms tts={tts_ms}ms total={total_ms}ms",
           flush=True)
 

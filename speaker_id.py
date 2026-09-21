@@ -118,14 +118,26 @@ def _load_registry():
             print(f"[spkid] failed to load speaker {fn}: {e}", flush=True)
             continue
         _registry[sid] = meta
-        _vectors[sid] = _unit(stack.mean(axis=0))
+        _vectors[sid] = _clip_matrix(stack)
 
 
 def _save(sid, meta, stack):
     json.dump(meta, open(_meta_path(sid), "w", encoding="utf-8"), indent=2)
     np.save(_vecs_path(sid), stack)
     _registry[sid] = meta
-    _vectors[sid] = _unit(stack.mean(axis=0))
+    _vectors[sid] = _clip_matrix(stack)
+
+
+def _clip_matrix(stack):
+    """Per-clip unit vectors [n_clips, 192], NOT a single mean centroid. Speakers
+    enroll across different mics (browser, Atom Echo, Echo Dot far-field), and a
+    centroid lets old-mic clips dilute new-mic ones — measured 2026-09-21: Eric at
+    0.5498 vs the 0.55 threshold on the Dot downstairs, with 4 old-mic + 2 Dot
+    clips averaged together. identify() scores max-over-clips instead, so a clip
+    from the matching mic wins directly; the MARGIN ambiguity check still guards
+    against cross-speaker confusion."""
+    stack = np.atleast_2d(np.asarray(stack, dtype=np.float32))
+    return np.stack([_unit(row) for row in stack])
 
 
 # ---------------------------------------------------------------------------
@@ -316,10 +328,18 @@ def list_speakers():
 # ---------------------------------------------------------------------------
 # Identification
 # ---------------------------------------------------------------------------
-def identify(raw: bytes):
+def identify(raw: bytes, sticky_sid=None, sticky_floor=None):
     """Identify the speaker of an utterance.
     Returns (name|'unknown', confidence_float, detail_str, sid|None). Never raises.
-    The sid lets callers key per-speaker state (history, voice) stably by id."""
+    The sid lets callers key per-speaker state (history, voice) stably by id.
+
+    sticky_sid/sticky_floor (Eric's session idea, 2026-09-21): when a device has an
+    active session speaker, the caller passes their sid and a LOWER floor. If that
+    speaker is already the TOP match but scored between the floor and THRESHOLD,
+    accept them — mid-conversation score dips stop flip-flopping the reply voice.
+    Sticky never applies to anyone but the current top match, so a different voice
+    that beats the session speaker still switches (at full THRESHOLD) or goes
+    unknown; a fresh session always requires a full-THRESHOLD first match."""
     try:
         if _model is None or not _vectors:
             return "unknown", 0.0, ("no_model" if _model is None else "no_enrollments"), None
@@ -330,15 +350,23 @@ def identify(raw: bytes):
         if secs < MIN_SPEECH_S:
             return "unknown", 0.0, f"too_short({secs:.1f}s)", None
         v = _embed_wave(wav)
+        # Best single clip per speaker (see _clip_matrix for why not the centroid).
         scored = sorted(
-            ((float(np.dot(v, vec)), sid) for sid, vec in _vectors.items()),
+            ((float(np.max(mat @ v)), sid) for sid, mat in _vectors.items()),
             reverse=True,
         )
         top_sim, top_sid = scored[0]
         second_sim = scored[1][0] if len(scored) > 1 else -1.0
+        sticky_ok = (sticky_sid is not None and top_sid == sticky_sid
+                     and sticky_floor is not None and top_sim >= sticky_floor)
         if top_sim < THRESHOLD:
+            if sticky_ok:
+                return _registry[top_sid]["name"], top_sim, f"sticky({top_sim:.2f})", top_sid
             return "unknown", top_sim, f"below_threshold({top_sim:.2f})", None
         if (top_sim - second_sim) < MARGIN:
+            # Within a session, ambiguity resolves toward the speaker already talking.
+            if sticky_ok:
+                return _registry[top_sid]["name"], top_sim, f"sticky_ambig({top_sim:.2f})", top_sid
             return "unknown", top_sim, f"ambiguous(d={top_sim - second_sim:.2f})", None
         return _registry[top_sid]["name"], top_sim, f"match({top_sim:.2f})", top_sid
     except Exception as e:  # noqa: BLE001 — ID must never break the converse path
