@@ -282,6 +282,17 @@ class VoiceBridge:
             self._log(f"[end] too little audio ({n}B), aborting")
             self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
             return
+        # Anti-hallucination gate: if the whole turn never produced VAD-qualifying
+        # speech, don't send it to STT — Whisper invents phrases ("Thank you.") on
+        # near-silence, and a self-triggered barge-in turn is exactly such audio
+        # (seen live 2026-09-21: 2.56s at rms 103-332 -> hallucinated turn). End
+        # SILENTLY: no user spoke, so no one is waiting, and a spoken cue here
+        # could re-trigger the mic in a loop.
+        if not self._heard_speech:
+            self._log(f"[end] no qualifying speech ({n}B, controller-ended) — "
+                      f"dropping turn silently (anti-hallucination)")
+            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            return
         pcm = bytes(self._buf)
         self._buf = bytearray()
         asyncio.create_task(self._process(pcm))
