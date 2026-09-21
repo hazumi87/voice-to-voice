@@ -105,3 +105,9 @@
 - Defect found, theirs: utterance audio truncated at front (turn 2 "jarvis what time is it" arrived as "is it."; turn 1 5.12s → empty transcript → 422). Evidence posted on relay; fix = controller pre-roll from wake timestamp.
 - Added audible failure cues: on converse 422 (no speech) / other failure, serve pre-rendered cue_no_speech.wav / cue_engine_fail.wav via the NORMAL TTS_END path (deliberately no ERROR event first — controller's ERROR handler sets turn waiters and could race the fetch). Falls back to silent ERROR+RUN_END if cue files missing.
 - Known infra bug hit: nuc-exec-bridge drops command arguments (echo returns bare newline) — do not trust its results; reported to Eric.
+
+## 2026-09-21 — M1 COMPLETE: Echo Dot live voice endpoint
+- On-device wake (their flip) fixed front-truncation; full 5.2s sentences arrive intact.
+- Eric enrolled through the Dot mic via the voice-only flow (print now 5 clips/54.7s); next turn identified Eric(0.60) and replied in his Jerma character voice. Full acceptance path proven: wake -> capture -> ECAPA reco -> personalized reply -> Dot playback, all local.
+- Barge-in/'Thank you.' incident root-caused: controller barge (likely self-hearing, their AEC investigation) + Whisper hallucination on near-silence; mitigated by d67c719 anti-hallucination gate.
+- Next: M2 latency (LLM dominates, 10-15s totals); their AEC + rings answers; custom wake phrase theirs.
