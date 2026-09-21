@@ -17,7 +17,7 @@
       "id": "echo-dot-biscuit",
       "discovery": "mdns",
       "mdns_instance_prefix": "echomuse-",
-      "mdns_instance": "",
+      "mdns_instance": "echomuse-lf0964130r0g",
       "mdns_port_min": 16001,
       "mdns_port_max": 16999,
       "password": "",

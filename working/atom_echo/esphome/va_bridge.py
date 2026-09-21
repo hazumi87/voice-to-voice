@@ -99,6 +99,21 @@ MDNS_SERVICE = "_esphomelib._tcp.local."
 _reply_store: dict[str, bytes] = {}
 _last_reply_device: str | None = None    # for the legacy /reply.wav route
 
+# Audible failure cues (pre-rendered, static files next to this script). A dead
+# turn used to be SILENT (ERROR+RUN_END) and Eric read the silence as "still
+# thinking" (first live test, 2026-09-21). When a cue exists we instead serve it
+# through the NORMAL TTS_END path — deliberately NOT sending ERROR first, because
+# the controller's ERROR handler sets its turn waiters and could race the fetch.
+_BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
+def _load_cue(name: str) -> bytes | None:
+    try:
+        with open(os.path.join(_BRIDGE_DIR, name), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+_CUE_NO_SPEECH = _load_cue("cue_no_speech.wav")      # engine 422: nothing transcribed
+_CUE_ENGINE_FAIL = _load_cue("cue_engine_fail.wav")  # engine down/other failure
+
 
 def load_config() -> dict:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -271,6 +286,24 @@ class VoiceBridge:
         self._buf = bytearray()
         asyncio.create_task(self._process(pcm))
 
+    async def _serve_cue(self, cue: bytes):
+        """Speak a stock failure cue through the normal turn-completion path, so a
+        failed turn is audible instead of silent. Completes the required event
+        sequence (STT_VAD_END was already sent by _end_and_process)."""
+        global _last_reply_device
+        try:
+            _reply_store[self.dev_id] = amplify_wav(cue, self.reply_gain)
+        except Exception:  # noqa: BLE001
+            _reply_store[self.dev_id] = cue
+        _last_reply_device = self.dev_id
+        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_INTENT_START, {})
+        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_INTENT_END, {})
+        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_TTS_START, {})
+        self.client.send_voice_assistant_event(
+            EV.VOICE_ASSISTANT_TTS_END, {"url": self.reply_url})
+        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+        self._log(f"[cue] served failure cue via {self.reply_url}")
+
     async def _process(self, pcm: bytes):
         global _last_reply_device
         wav = pcm_to_wav(pcm)
@@ -287,11 +320,17 @@ class VoiceBridge:
             resp.raise_for_status()
         except Exception as e:  # noqa: BLE001
             self._log(f"[converse] FAILED: {e!r}")
-            # Ratified: ERROR then RUN_END is handled controller-side as a dead
-            # turn (it unblocks their waiters) — do not degrade to bare RUN_END.
-            self.client.send_voice_assistant_event(
-                EV.VOICE_ASSISTANT_ERROR, {"code": "converse_failed", "message": str(e)})
-            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            cue = _CUE_NO_SPEECH if status == 422 else _CUE_ENGINE_FAIL
+            if cue is not None:
+                await self._serve_cue(cue)
+            else:
+                # No cue file on disk — fall back to the ratified silent dead turn
+                # (ERROR unblocks the controller's waiters).
+                self.client.send_voice_assistant_event(
+                    EV.VOICE_ASSISTANT_ERROR,
+                    {"code": "converse_failed", "message": str(e)})
+                self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
             return
 
         transcript = unquote(resp.headers.get("X-Transcript", ""))
