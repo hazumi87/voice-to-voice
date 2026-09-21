@@ -11,7 +11,7 @@
       "port": 6053,
       "password": "",
       "reply_gain": 3.0,
-      "enabled": true
+      "enabled": false
     },
     {
       "id": "echo-dot-biscuit",
