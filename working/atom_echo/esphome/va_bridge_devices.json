@@ -22,6 +22,7 @@
       "mdns_port_max": 16999,
       "password": "",
       "reply_gain": 1.0,
+      "filler_set": "jerma",
       "enabled": true
     }
   ]

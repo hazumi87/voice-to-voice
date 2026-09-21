@@ -38,6 +38,7 @@ import audioop
 import io
 import json
 import os
+import random
 import time
 import wave
 from urllib.parse import unquote
@@ -166,6 +167,29 @@ class VoiceBridge:
         self._peak_rms = 0.0             # running loudness peak for the energy gate
         self._next_run_guard = 0.0       # echo-settle guard to apply to the NEXT run
         self._guard_until = 0.0          # monotonic time until which to drop input audio
+        # Thinking-filler library (Eric, 2026-09-21): short in-character utterances
+        # ("umm...", "let me think...") played via the announce path DURING the
+        # engine round trip, so the think-gap isn't dead silence. Plays only after
+        # capture ends (never over the user's speech) and no filler contains the
+        # wake phrase (phrase-free playback proven barge-safe even pre-AEC-fix).
+        self._fillers: list[bytes] = []
+        self._last_filler = -1
+        self.filler_key = f"{self.dev_id}-filler"
+        self.filler_url = (f"http://{cfg['server_public_ip']}:{cfg['server_port']}"
+                           f"/reply/{self.filler_key}.wav")
+        fset = dev.get("filler_set", "")
+        if fset:
+            fdir = os.path.join(_BRIDGE_DIR, "fillers", fset)
+            if os.path.isdir(fdir):
+                for fn in sorted(os.listdir(fdir)):
+                    if fn.endswith(".wav"):
+                        try:
+                            with open(os.path.join(fdir, fn), "rb") as f:
+                                raw = f.read()
+                            self._fillers.append(amplify_wav(raw, self.reply_gain))
+                        except Exception:  # noqa: BLE001
+                            pass
+            self._log(f"[filler] set '{fset}': {len(self._fillers)} clip(s)")
 
     def _log(self, msg: str):
         print(f"[{self.dev_id}] {msg}", flush=True)
@@ -315,9 +339,30 @@ class VoiceBridge:
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
         self._log(f"[cue] served failure cue via {self.reply_url}")
 
+    async def _play_filler(self):
+        """Announce one random filler clip while the engine thinks. Best-effort:
+        any failure just means silence, exactly what we had before."""
+        try:
+            idx = random.randrange(len(self._fillers))
+            if len(self._fillers) > 1 and idx == self._last_filler:
+                idx = (idx + 1) % len(self._fillers)
+            self._last_filler = idx
+            _reply_store[self.filler_key] = self._fillers[idx]
+            await self.client.send_voice_assistant_announcement_await_response(
+                media_id=self.filler_url, timeout=15.0)
+            self._log(f"[filler] played clip #{idx}")
+        except Exception as e:  # noqa: BLE001
+            self._log(f"[filler] skipped ({e!r})")
+
     async def _process(self, pcm: bytes):
         global _last_reply_device
         wav = pcm_to_wav(pcm)
+
+        # Kick the filler concurrently with the engine round trip; await it before
+        # delivering the real reply so the two playbacks never overlap.
+        filler_task = None
+        if self._fillers:
+            filler_task = asyncio.create_task(self._play_filler())
 
         def _post():
             return requests.post(
@@ -331,6 +376,8 @@ class VoiceBridge:
             resp.raise_for_status()
         except Exception as e:  # noqa: BLE001
             self._log(f"[converse] FAILED: {e!r}")
+            if filler_task:
+                await asyncio.gather(filler_task, return_exceptions=True)
             status = getattr(getattr(e, "response", None), "status_code", None)
             cue = _CUE_NO_SPEECH if status == 422 else _CUE_ENGINE_FAIL
             if cue is not None:
@@ -343,6 +390,9 @@ class VoiceBridge:
                     {"code": "converse_failed", "message": str(e)})
                 self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
             return
+
+        if filler_task:
+            await asyncio.gather(filler_task, return_exceptions=True)
 
         transcript = unquote(resp.headers.get("X-Transcript", ""))
         reply_text = unquote(resp.headers.get("X-Reply", ""))
