@@ -539,10 +539,25 @@ def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
-    reply = data["message"]["content"].strip()
+    reply = _strip_stage_directions(data["message"]["content"].strip())
     with history_lock:
         _history_for(history_key).append({"role": "assistant", "content": reply})
     return reply
+
+
+_STAGE_DIRECTION_RE = re.compile(r"\s*\*[^*\n]{1,80}\*\s*")
+
+
+def _strip_stage_directions(text: str) -> str:
+    """Remove asterisk-delimited stage directions (*giggles maniacally*, *ahem*)
+    from a reply that will be SPOKEN by TTS. The character prompts already forbid
+    them, but models imitate their own history harder than they obey the system
+    prompt (relapse observed 2026-09-22 minutes after the prompt fix), so this is
+    the deterministic guarantee. Stripping BEFORE the history append matters as
+    much as before synthesis — clean history stops re-teaching the habit."""
+    cleaned = _STAGE_DIRECTION_RE.sub(" ", text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned if cleaned else text
 
 
 # ---------------------------------------------------------------------------
