@@ -100,6 +100,21 @@ MDNS_SERVICE = "_esphomelib._tcp.local."
 _reply_store: dict[str, bytes] = {}
 _last_reply_device: str | None = None    # for the legacy /reply.wav route
 
+# Live bridges by device id (P1 voice-channel, 2026-09-22): the /announce ingress
+# needs the CONNECTED VoiceBridge for a device to push a reply that arrives minutes
+# after the turn that asked for it. A device with no entry here is offline.
+_bridges: dict[str, "VoiceBridge"] = {}
+
+
+def _wav_seconds(b: bytes) -> float:
+    """Duration of a WAV payload (0.0 if unparseable). Used to estimate how long the
+    device is busy playing a TTS_END reply we can't await."""
+    try:
+        with wave.open(io.BytesIO(b), "rb") as w:
+            return w.getnframes() / float(w.getframerate() or 1)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
 # Audible failure cues (pre-rendered, static files next to this script). A dead
 # turn used to be SILENT (ERROR+RUN_END) and Eric read the silence as "still
 # thinking" (first live test, 2026-09-21). When a cue exists we instead serve it
@@ -167,6 +182,15 @@ class VoiceBridge:
         self._peak_rms = 0.0             # running loudness peak for the energy gate
         self._next_run_guard = 0.0       # echo-settle guard to apply to the NEXT run
         self._guard_until = 0.0          # monotonic time until which to drop input audio
+        # Voice-channel delivery (P1): a pushed reply must never play over a capture or
+        # over another reply. _run_active spans RUN_START..RUN_END; _busy_until covers
+        # the TTS_END playback we hand the device by URL and cannot await.
+        self._run_active = False
+        self._busy_until = 0.0
+        self._announce_lock = asyncio.Lock()
+        self.announce_key = f"{self.dev_id}-announce"
+        self.announce_url = (f"http://{cfg['server_public_ip']}:{cfg['server_port']}"
+                             f"/reply/{self.announce_key}.wav")
         # Thinking-filler library (Eric, 2026-09-21): short in-character utterances
         # ("umm...", "let me think...") played via the announce path DURING the
         # engine round trip, so the think-gap isn't dead silence. Plays only after
@@ -194,6 +218,52 @@ class VoiceBridge:
     def _log(self, msg: str):
         print(f"[{self.dev_id}] {msg}", flush=True)
 
+    def _run_end(self, busy_wav: bytes | None = None):
+        """Send RUN_END and mark the pipeline run closed. If we just handed the device a
+        reply WAV by URL (TTS_END path), estimate how long it will be playing so a
+        pushed announcement waits instead of talking over it."""
+        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+        self._run_active = False
+        if busy_wav is not None:
+            self._busy_until = self._loop.time() + _wav_seconds(busy_wav) + 0.5
+
+    def busy(self) -> bool:
+        return self._run_active or self._loop.time() < self._busy_until
+
+    async def announce(self, wav: bytes, start_conversation: bool = False,
+                       timeout: float = 30.0) -> dict:
+        """Push a WAV to the device via the announce path and report TRUTHFULLY:
+        {delivered:true, played_ms} only after playback finished; otherwise
+        {delivered:false, error}. Waits (up to `timeout`) for any capture/playback in
+        progress to end first; never interrupts the user. Serialized per device."""
+        t_wait0 = self._loop.time()
+        while self.busy():
+            if self._loop.time() - t_wait0 > timeout:
+                return {"delivered": False, "error": "device_busy"}
+            await asyncio.sleep(0.1)
+        async with self._announce_lock:
+            try:
+                _reply_store[self.announce_key] = amplify_wav(wav, self.reply_gain)
+            except Exception:  # noqa: BLE001
+                _reply_store[self.announce_key] = wav
+            if start_conversation:
+                # The reply asked a question: the mic re-opens right after playback,
+                # so arm the echo-settle guard exactly as the enrollment followup does.
+                self._next_run_guard = FOLLOWUP_GUARD_S
+            t0 = self._loop.time()
+            try:
+                await self.client.send_voice_assistant_announcement_await_response(
+                    media_id=self.announce_url, timeout=timeout,
+                    start_conversation=start_conversation)
+            except Exception as e:  # noqa: BLE001
+                self._log(f"[announce] FAILED ({e!r})")
+                self._next_run_guard = 0.0
+                return {"delivered": False, "error": "playback_failed", "detail": repr(e)}
+            played_ms = int((self._loop.time() - t0) * 1000)
+            self._log(f"[announce] played {len(wav)}B in {played_ms}ms "
+                      f"start_conversation={int(start_conversation)}")
+            return {"delivered": True, "played_ms": played_ms}
+
     async def handle_start(self, conversation_id, flags, audio_settings, wake_word_phrase):
         self._log(f"[start] conv={conversation_id} flags={VoiceAssistantCommandFlag(flags)!r} "
                   f"wake='{wake_word_phrase}'")
@@ -204,6 +274,7 @@ class VoiceBridge:
         self._peak_rms = 0.0
         self._processing = False
         self._heard_speech = False
+        self._run_active = True
         now = self._loop.time()
         self._start_t = now
         self._last_voice_t = now
@@ -286,7 +357,7 @@ class VoiceBridge:
     async def _abort(self):
         self._processing = True
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_VAD_END, {})
-        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+        self._run_end()
 
     async def handle_stop(self, server_side: bool):
         n = len(self._buf)
@@ -304,7 +375,7 @@ class VoiceBridge:
         n = len(self._buf)
         if n < 1600:
             self._log(f"[end] too little audio ({n}B), aborting")
-            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            self._run_end()
             return
         # Anti-hallucination gate: if the whole turn never produced VAD-qualifying
         # speech, don't send it to STT — Whisper invents phrases ("Thank you.") on
@@ -315,7 +386,7 @@ class VoiceBridge:
         if not self._heard_speech:
             self._log(f"[end] no qualifying speech ({n}B, controller-ended) — "
                       f"dropping turn silently (anti-hallucination)")
-            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            self._run_end()
             return
         pcm = bytes(self._buf)
         self._buf = bytearray()
@@ -336,7 +407,7 @@ class VoiceBridge:
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_TTS_START, {})
         self.client.send_voice_assistant_event(
             EV.VOICE_ASSISTANT_TTS_END, {"url": self.reply_url})
-        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+        self._run_end(busy_wav=_reply_store.get(self.dev_id))
         self._log(f"[cue] served failure cue via {self.reply_url}")
 
     async def _play_filler(self):
@@ -388,7 +459,7 @@ class VoiceBridge:
                 self.client.send_voice_assistant_event(
                     EV.VOICE_ASSISTANT_ERROR,
                     {"code": "converse_failed", "message": str(e)})
-                self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+                self._run_end()
             return
 
         if filler_task:
@@ -428,7 +499,7 @@ class VoiceBridge:
             # played twice), then use the announce path: it plays reply.wav AND re-opens
             # the mic (start_conversation=True) for the user's answer. The device then
             # starts a fresh voice_assistant run (flags=0, no wake word) -> handle_start.
-            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            self._run_end()
             # Arm the echo-settle guard for the capture run the device is about to start,
             # so the loud reply we're about to play doesn't self-trigger that run's mic.
             self._next_run_guard = FOLLOWUP_GUARD_S
@@ -444,7 +515,7 @@ class VoiceBridge:
                 {"text": reply_text, "speaker": spk, "sid": spk_sid})
             self.client.send_voice_assistant_event(
                 EV.VOICE_ASSISTANT_TTS_END, {"url": self.reply_url})
-            self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
+            self._run_end(busy_wav=_reply_store.get(self.dev_id))
             self._log(f"[tts] handed url {self.reply_url} to device")
 
 
@@ -454,6 +525,57 @@ async def serve_reply_for(request: web.Request) -> web.Response:
     if wav is None:
         return web.Response(status=404)
     return web.Response(body=wav, content_type="audio/wav")
+
+
+def _ingress_allowed(request: web.Request, cfg: dict) -> bool:
+    """The announce ingress can make the Dot say anything, so it is loopback-only
+    (v2v on this box calls it) unless the roster configures `announce_token`, in which
+    case a matching X-Announce-Token header is accepted from anywhere. :8222 is NOT
+    behind Tailscale Serve, so a loopback check here is meaningful (unlike v2v's :8221)."""
+    tok = (cfg.get("announce_token") or "").strip()
+    if tok and request.headers.get("X-Announce-Token", "") == tok:
+        return True
+    return (request.remote or "") in ("127.0.0.1", "::1")
+
+
+async def announce_for(request: web.Request) -> web.Response:
+    """POST /announce/<device_id>?start_conversation=0|1&timeout=30  body: WAV bytes.
+    Pushes the WAV to the device via the announce path. Truthful, synchronous reply:
+    {delivered:true, played_ms} after playback, else {delivered:false, error}."""
+    cfg = request.app["cfg"]
+    if not _ingress_allowed(request, cfg):
+        return web.json_response({"delivered": False, "error": "unauthorized"}, status=401)
+    dev_id = request.match_info["device_id"]
+    bridge = _bridges.get(dev_id)
+    if bridge is None:
+        known = any(d["id"] == dev_id for d in cfg.get("devices", []))
+        return web.json_response(
+            {"delivered": False, "error": "device_offline" if known else "device_unknown"},
+            status=404)
+    wav = await request.read()
+    if len(wav) < 100:
+        return web.json_response({"delivered": False, "error": "empty_wav"}, status=400)
+    sc = request.query.get("start_conversation", "0") in ("1", "true", "yes")
+    try:
+        timeout = min(max(float(request.query.get("timeout", "30")), 1.0), 60.0)
+    except ValueError:
+        timeout = 30.0
+    res = await bridge.announce(wav, start_conversation=sc, timeout=timeout)
+    status = 200 if res.get("delivered") else (409 if res.get("error") == "device_busy" else 502)
+    res["device"] = dev_id
+    return web.json_response(res, status=status)
+
+
+async def devices_list(request: web.Request) -> web.Response:
+    """GET /devices -> roster with live connection state (for v2v's /api/voice/devices)."""
+    cfg = request.app["cfg"]
+    out = []
+    for d in cfg.get("devices", []):
+        b = _bridges.get(d["id"])
+        out.append({"id": d["id"], "enabled": bool(d.get("enabled", True)),
+                    "connected": b is not None,
+                    "busy": bool(b.busy()) if b is not None else None})
+    return web.json_response({"devices": out})
 
 
 async def serve_reply_legacy(request: web.Request) -> web.Response:
@@ -629,6 +751,7 @@ async def run_device(dev: dict, cfg: dict):
                 handle_audio=bridge.handle_audio,
             )
             print(f"[{dev_id}] [api] subscribed to voice_assistant (API-audio)", flush=True)
+            _bridges[dev_id] = bridge      # announce ingress can reach this device now
             await disconnected.wait()      # park until the link drops, then reconnect
             print(f"[{dev_id}] [api] link dropped — reconnecting in {BACKOFF_MIN:.0f}s",
                   flush=True)
@@ -639,6 +762,7 @@ async def run_device(dev: dict, cfg: dict):
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_MAX)
         finally:
+            _bridges.pop(dev_id, None)     # offline until the next successful subscribe
             if client is not None:
                 try:
                     await client.disconnect()
@@ -650,8 +774,11 @@ async def main():
     cfg = load_config()
     _start_hc_heartbeat()
     app = web.Application()
+    app["cfg"] = cfg
     app.router.add_get("/reply/{device_id}.wav", serve_reply_for)
     app.router.add_get("/reply.wav", serve_reply_legacy)
+    app.router.add_post("/announce/{device_id}", announce_for)
+    app.router.add_get("/devices", devices_list)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", cfg["server_port"]).start()

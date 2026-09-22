@@ -116,3 +116,19 @@
 - speaker_id: identify() now scores each speaker by their BEST single clip, not the mean centroid — cross-mic enrollment (browser/Atom Echo/Dot) no longer dilutes; Eric measured 0.5498 vs 0.55 threshold downstairs under the centroid.
 - Device sticky sessions (Eric's design): once recognized at full threshold on a device, next turns within 300s accept the SAME top-matching speaker down to 0.40 — stops mid-conversation voice flip-flop. Sticky never applies to a non-top-match; fresh sessions need full threshold; noise scores ~0.05-0.09.
 - /api/converse log line now carries dev=<device id> (bridge sends it since 921ff94; server restart finally picked the field up).
+
+## 2026-09-22T20:03:04Z — Voice channel P1: /api/voice/deliver + bridge announce ingress (briefing-table seam)
+- Contract negotiated + ratified with the briefing-table agent on the cross-host relay
+  (F:\agent-share\relay\briefing-table--voice-to-voice, t:330a518a); consensus doc is
+  docs/voice-channel.md in briefing-table (vk-1704), awaiting Eric's approval.
+- server.py: bearer auth (voice_auth.json, git-ignored, hot-reload, fail-closed, NO loopback
+  exemption), GET /api/voice/devices, POST /api/voice/deliver (speaker-sid -> character voice,
+  paraphrase off|subtle|full, earcon prefix, replyId idempotency, per-device lock, truthful
+  played_ms after playback, structured errors + status map). voice_devices.json device table.
+  tools/mint_voice_token.py.
+- va_bridge.py: live-bridge registry, run/busy tracking (_run_end helper owns every RUN_END),
+  announce() with wait-for-idle + start_conversation, POST /announce/<device> (loopback-only
+  unless announce_token), GET /devices.
+- Gate PASSED via https://vrpc-3.tail567253.ts.net: 401/404/413 paths, live delivery on the
+  Dot (played_ms 4936, synth 2.6 s), replay of the same replyId returned cached, no re-play.
+- Decision (both agents, Eric to confirm): v2v stays canonical on the VRPC; this work first.

@@ -2392,6 +2392,328 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     return Response(content=wav, media_type="audio/wav", headers=headers)
 
 
+
+# ---------------------------------------------------------------------------
+# VOICE CHANNEL — briefing-table ⇄ voice-to-voice (contract: docs/voice-channel.md in
+# briefing-table, relay thread t:330a518a, 2026-09-22).
+#
+# P1 = the OUTBOUND leg only: an engine pushes SHORT text for a device; we synthesize
+# it in the speaker's assigned voice, play it on the device that spoke (via the Dot
+# bridge's announce ingress on loopback) and answer TRUTHFULLY only after playback
+# finished. Bearer-authenticated and FAIL-CLOSED: no tokens configured = nobody in.
+# There is deliberately NO loopback exemption — Tailscale Serve proxies every remote
+# caller onto 127.0.0.1, so "loopback" carries no trust here (the engine learned this
+# the hard way; see their auth.isLocalHookDelivery note).
+#
+# We NEVER re-route: a device that is unknown/offline/busy is reported as such and
+# the engine's router decides where the message goes next.
+# ---------------------------------------------------------------------------
+import hmac
+import urllib.error
+
+VOICE_AUTH_PATH = os.path.join(HERE, "voice_auth.json")        # git-ignored; {tokens:{name:token}}
+VOICE_DEVICES_PATH = os.path.join(HERE, "voice_devices.json")  # committed device table
+VOICE_TEXT_MAX = 500              # chars; over = 413 too_long (we never truncate silently)
+VOICE_DELIVER_TIMEOUT_S = 30.0    # our playback cap; the engine waits 45 s on its side
+VOICE_REPLY_CACHE_TTL_S = 600.0   # replyId idempotency window
+DEV_TURN_MIN_CONF = 0.50          # P3: min speaker confidence to FORWARD a dev turn
+
+_json_hot_cache: dict = {}        # path -> (mtime, data)
+
+
+def _load_json_hot(path: str, default):
+    """Read a JSON file, re-reading only when its mtime changes (hot-reloadable config)."""
+    try:
+        m = os.path.getmtime(path)
+    except OSError:
+        return default
+    ent = _json_hot_cache.get(path)
+    if ent and ent[0] == m:
+        return ent[1]
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:  # noqa: BLE001
+        print(f"[voice] cannot read {os.path.basename(path)}: {e!r}", flush=True)
+        return default
+    _json_hot_cache[path] = (m, data)
+    return data
+
+
+def _voice_devices() -> dict:
+    return ((_load_json_hot(VOICE_DEVICES_PATH, {}) or {}).get("devices") or {})
+
+
+def _voice_auth(request: Request):
+    """Bearer check against voice_auth.json. Returns the token's owner name, else None."""
+    hdr = request.headers.get("authorization", "")
+    if not hdr.lower().startswith("bearer "):
+        return None
+    tok = hdr[7:].strip()
+    if not tok:
+        return None
+    tokens = ((_load_json_hot(VOICE_AUTH_PATH, {}) or {}).get("tokens") or {})
+    for name, t in tokens.items():
+        if t and hmac.compare_digest(str(t), tok):
+            return name
+    return None
+
+
+def _voice_unauth():
+    return JSONResponse({"delivered": False, "error": "unauthorized"}, status_code=401)
+
+
+_earcon_cache: dict = {}
+
+
+def _earcon_wav() -> bytes:
+    """Two short rising tones (~260 ms) then 150 ms of silence, at the TTS sample rate.
+    Meaning: "this is a pushed message, not an answer to what you just said". Generated
+    in-process once; no asset file to lose."""
+    sr = TTS_SR
+    b = _earcon_cache.get(sr)
+    if b:
+        return b
+
+    def tone(freq, ms, amp=0.18):
+        n = int(sr * ms / 1000)
+        t = np.arange(n) / sr
+        fade_in = np.minimum(1.0, t / 0.010)
+        fade_out = np.minimum(1.0, (t[-1] - t) / 0.025) if n else np.ones(0)
+        return amp * np.sin(2 * np.pi * freq * t) * fade_in * fade_out
+
+    y = np.concatenate([tone(784, 110), tone(1175, 150),
+                        np.zeros(int(sr * 0.15))]).astype(np.float32)
+    buf = io.BytesIO()
+    sf.write(buf, y, sr, format="WAV")
+    b = buf.getvalue()
+    _earcon_cache[sr] = b
+    return b
+
+
+def _concat_wavs(parts) -> bytes:
+    """Concatenate WAV byte blobs (same sample rate) into one mono WAV."""
+    arrs, sr = [], None
+    for p in parts:
+        y, s = sf.read(io.BytesIO(p), dtype="float32")
+        if getattr(y, "ndim", 1) > 1:
+            y = y.mean(axis=1)
+        if sr is None:
+            sr = s
+        elif s != sr:
+            raise ValueError(f"sample-rate mismatch {s} != {sr}")
+        arrs.append(y)
+    buf = io.BytesIO()
+    sf.write(buf, np.concatenate(arrs), sr, format="WAV")
+    return buf.getvalue()
+
+
+_voice_dev_locks: dict = {}
+_voice_dev_locks_guard = threading.Lock()
+
+
+def _voice_dev_lock(dev_id: str) -> threading.Lock:
+    with _voice_dev_locks_guard:
+        return _voice_dev_locks.setdefault(dev_id, threading.Lock())
+
+
+_voice_reply_cache: dict = {}     # replyId -> (t, status, body)
+_voice_reply_cache_lock = threading.Lock()
+
+
+def _bridge_base(dev: dict) -> str:
+    u = dev.get("announce_url") or ""
+    return u.split("/announce/", 1)[0]
+
+
+def _push_to_device(dev: dict, wav: bytes, start_conversation: bool, timeout: float):
+    """Hand a WAV to the device's adapter. Only the Dot bridge adapter exists in P1.
+    Returns (http_status, body) with body always carrying delivered + error."""
+    if dev.get("adapter", "bridge") != "bridge":
+        return 502, {"delivered": False, "error": "adapter_unsupported",
+                     "adapter": dev.get("adapter")}
+    url = (f"{dev['announce_url']}?start_conversation={1 if start_conversation else 0}"
+           f"&timeout={int(timeout)}")
+    headers = {"Content-Type": "audio/wav"}
+    if dev.get("announce_token"):
+        headers["X-Announce-Token"] = dev["announce_token"]
+    req = urllib.request.Request(url, data=wav, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout + 10) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read() or b"{}")
+        except Exception:  # noqa: BLE001
+            body = {}
+        if not isinstance(body, dict) or "error" not in body:
+            body = {"delivered": False, "error": "playback_failed", "detail": f"http {e.code}"}
+        return e.code, body
+    except Exception as e:  # noqa: BLE001 — refused/timeout: the bridge (and so the device) is off
+        return 502, {"delivered": False, "error": "device_offline", "detail": repr(e)}
+
+
+# Contract status codes (docs/voice-channel.md §4.4): every failure body is
+# {delivered:false, error}; the status just lets a dumb client branch.
+_VOICE_ERR_STATUS = {
+    "device_unknown": 404, "device_offline": 502, "device_busy": 409,
+    "playback_failed": 502, "synth_unavailable": 503, "too_long": 413,
+    "unauthorized": 401, "adapter_unsupported": 502, "empty_wav": 500,
+}
+
+
+@app.get("/api/voice/devices")
+def voice_devices(request: Request):
+    """Device table + live connection state (best-effort, from each bridge's /devices)."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    devs = _voice_devices()
+    live: dict = {}
+    for base in {_bridge_base(d) for d in devs.values() if d.get("adapter", "bridge") == "bridge"}:
+        if not base:
+            continue
+        try:
+            with urllib.request.urlopen(f"{base}/devices", timeout=3) as r:
+                for row in (json.loads(r.read()) or {}).get("devices", []):
+                    live[row["id"]] = row
+        except Exception as e:  # noqa: BLE001
+            print(f"[voice] bridge {base} unreachable for /devices: {e!r}", flush=True)
+    out = []
+    for dev_id, d in devs.items():
+        row = live.get(dev_id) or {}
+        out.append({"device": dev_id, "kind": d.get("kind"), "room": d.get("room") or "",
+                    "mode": d.get("mode", "chat"), "adapter": d.get("adapter", "bridge"),
+                    "connected": row.get("connected"), "busy": row.get("busy")})
+    return {"devices": out, "caller": who}
+
+
+@app.post("/api/voice/deliver")
+def voice_deliver(request: Request, payload: dict = Body(...)):
+    """Engine -> v2v: speak `text` on `device`. See docs/voice-channel.md §4.4.
+
+    Body: {device, text, channelId?, name?, inReplyTo?, replyId?, sid?, expectsReply?,
+           paraphrase?: off|subtle|full, vendor?}
+    200 {delivered:true, played_ms, device, ...} only AFTER playback finished.
+    Otherwise {delivered:false, error} with a matching status (see _VOICE_ERR_STATUS)."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    t0 = time.time()
+    device = str(payload.get("device") or "").strip()
+    text = str(payload.get("text") or "").strip()
+    reply_id = str(payload.get("replyId") or "").strip()
+    if not device:
+        return JSONResponse({"delivered": False, "error": "bad_request", "field": "device"},
+                            status_code=400)
+    if not text:
+        return JSONResponse({"delivered": False, "error": "bad_request", "field": "text"},
+                            status_code=400)
+    if len(text) > VOICE_TEXT_MAX:
+        return JSONResponse({"delivered": False, "error": "too_long", "max": VOICE_TEXT_MAX,
+                             "len": len(text)}, status_code=413)
+
+    # Idempotency: the same replyId never plays twice; it gets the first outcome back.
+    if reply_id:
+        with _voice_reply_cache_lock:
+            now = time.time()
+            for k in [k for k, v in _voice_reply_cache.items()
+                      if now - v[0] > VOICE_REPLY_CACHE_TTL_S]:
+                _voice_reply_cache.pop(k, None)
+            hit = _voice_reply_cache.get(reply_id)
+        if hit:
+            body = dict(hit[2])
+            body["replayed"] = True
+            return JSONResponse(body, status_code=hit[1])
+
+    dev = _voice_devices().get(device)
+    if not dev:
+        return JSONResponse({"delivered": False, "error": "device_unknown", "device": device},
+                            status_code=404)
+
+    sid = str(payload.get("sid") or "").strip()
+    expects_reply = bool(payload.get("expectsReply", False))
+    para = str(payload.get("paraphrase") or "off").strip().lower()
+    if para not in ("off", "subtle", "full"):
+        para = "off"
+
+    # Voice = the speaker's saved selection (character -> its voice + style + tuning),
+    # else the default. paraphrase=off speaks the engine's words VERBATIM in that voice.
+    sel = speaker_id.get_voice(sid) if sid else ""
+    voice, style = _resolve_speaker_voice(sel)
+    voice = voice or DEFAULT_VOICE
+    ch = None
+    if sel.startswith("char:"):
+        ch = next((c for c in CHARACTERS if c["id"] == sel[5:]), None)
+    tn = (ch or {}).get("tuning") or {}
+    sp, gd, tp, st = clamp_tuning(float(tn.get("speed", 1.0)), float(tn.get("guidance", 2.0)),
+                                  float(tn.get("temperature", 0.0)), int(tn.get("steps", 16)))
+    spoken = text
+    if para != "off" and style:
+        try:
+            if para == "subtle":
+                spoken = _style_line(text, style)          # cadence only, quality-guarded
+            else:
+                system = assemble_reword_system((ch or {}).get("name", ""),
+                                                (ch or {}).get("bio", ""), style, "full")
+                spoken = _ollama_chat([{"role": "system", "content": system},
+                                       {"role": "user", "content": text}],
+                                      num_predict=200) or text
+        except Exception as e:  # noqa: BLE001 — never let styling block delivery
+            print(f"[voice] paraphrase={para} failed ({e!r}); verbatim", flush=True)
+            spoken = text
+    spoken = _strip_stage_directions(spoken) or text
+
+    try:
+        wav = synth(spoken, voice, num_step=st, speed=sp, guidance_scale=gd,
+                    class_temperature=tp)
+    except GpuBusy as e:
+        return JSONResponse({"delivered": False, "error": "synth_unavailable",
+                             "detail": str(e)}, status_code=503)
+    except Exception as e:  # noqa: BLE001
+        print(f"[voice] synth failed: {e!r}", flush=True)
+        return JSONResponse({"delivered": False, "error": "synth_unavailable",
+                             "detail": repr(e)}, status_code=503)
+    try:
+        wav = _concat_wavs([_earcon_wav(), wav])
+    except Exception as e:  # noqa: BLE001 — earcon is a nicety; the text must still play
+        print(f"[voice] earcon concat failed ({e!r}); playing text only", flush=True)
+    t_synth = time.time()
+
+    # One delivery at a time per device (the bridge also serializes; this keeps our
+    # own workers from piling up behind a slow playback).
+    lock = _voice_dev_lock(device)
+    if not lock.acquire(timeout=VOICE_DELIVER_TIMEOUT_S):
+        status, body = 409, {"delivered": False, "error": "device_busy",
+                             "detail": "another delivery is in progress"}
+    else:
+        try:
+            status, body = _push_to_device(dev, wav, expects_reply, VOICE_DELIVER_TIMEOUT_S)
+        finally:
+            lock.release()
+    if not body.get("delivered"):
+        status = _VOICE_ERR_STATUS.get(body.get("error", ""), status if status >= 400 else 502)
+    t_done = time.time()
+    body.update({
+        "device": device, "replyId": reply_id or None,
+        "inReplyTo": payload.get("inReplyTo"), "channelId": payload.get("channelId"),
+        "spoken": spoken, "voice": voice, "paraphrase": para, "expectsReply": expects_reply,
+        "caller": who,
+        "timing": {"synth_ms": int((t_synth - t0) * 1000),
+                   "deliver_ms": int((t_done - t_synth) * 1000),
+                   "total_ms": int((t_done - t0) * 1000)},
+    })
+    print(f"[voice] deliver from={who} dev={device} name={payload.get('name')!r} "
+          f"sid={sid or '-'} voice={voice} para={para} expects={int(expects_reply)} "
+          f"-> {'OK' if body.get('delivered') else body.get('error')} "
+          f"played={body.get('played_ms', '-')}ms synth={body['timing']['synth_ms']}ms "
+          f"total={body['timing']['total_ms']}ms | {spoken!r}", flush=True)
+    if reply_id:
+        with _voice_reply_cache_lock:
+            _voice_reply_cache[reply_id] = (time.time(), status, body)
+    return JSONResponse(body, status_code=status)
+
+
 # Static front-end (mounted last so /api/* wins).
 @app.get("/")
 def index():

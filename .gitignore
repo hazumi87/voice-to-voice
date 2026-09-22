@@ -13,6 +13,9 @@ speakers/
 server.log
 *.wav
 
+# Voice-channel bearer tokens (secrets; minted by tools/mint_voice_token.py)
+voice_auth.json
+
 # Editor / agent local
 .claude/
 prompts.json

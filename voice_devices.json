@@ -1,0 +1,12 @@
+{
+  "_comment": "Voice-channel device table (docs/voice-channel.md in briefing-table). Static name; hot-reloaded by server.py on change. `device` ids are the roster names the bridge uses. `mode` is the P3 dev-mode flag (chat|development). `room` feeds the origin envelope for location-aware personas later. `announce_url` is the Dot bridge's loopback ingress — never a tailnet URL.",
+  "devices": {
+    "echo-dot-biscuit": {
+      "kind": "echo",
+      "adapter": "bridge",
+      "announce_url": "http://127.0.0.1:8222/announce/echo-dot-biscuit",
+      "room": "",
+      "mode": "chat"
+    }
+  }
+}
