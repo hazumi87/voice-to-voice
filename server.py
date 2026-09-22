@@ -2573,6 +2573,7 @@ _VOICE_ERR_STATUS = {
     "device_unknown": 404, "device_offline": 502, "device_busy": 409,
     "playback_failed": 502, "synth_unavailable": 503, "too_long": 413,
     "unauthorized": 401, "adapter_unsupported": 502, "empty_wav": 500,
+    "unknown_character": 404,
 }
 
 
@@ -2606,8 +2607,9 @@ def voice_devices(request: Request):
 def voice_deliver(request: Request, payload: dict = Body(...)):
     """Engine -> v2v: speak `text` on `device`. See docs/voice-channel.md §4.4.
 
-    Body: {device, text, channelId?, name?, inReplyTo?, replyId?, sid?, expectsReply?,
-           paraphrase?: off|subtle|full, vendor?}
+    Body: {device, text, channelId?, name?, inReplyTo?, replyId?, sid?, character?,
+           expectsReply?, paraphrase?: off|subtle|full, vendor?}
+    `character` (explicit voice, e.g. a Home Assistant announcement) beats `sid`.
     200 {delivered:true, played_ms, device, ...} only AFTER playback finished.
     Otherwise {delivered:false, error} with a matching status (see _VOICE_ERR_STATUS)."""
     who = _voice_auth(request)
@@ -2651,13 +2653,24 @@ def voice_deliver(request: Request, payload: dict = Body(...)):
     if para not in ("off", "subtle", "full"):
         para = "off"
 
-    # Voice = the speaker's saved selection (character -> its voice + style + tuning),
-    # else the default. paraphrase=off speaks the engine's words VERBATIM in that voice.
-    sel = speaker_id.get_voice(sid) if sid else ""
+    # Voice = an explicit `character` (a saved character id/name: its voice + style +
+    # tuning; unknown = loud 404, never a silent default — same rule as /synthesize),
+    # else the speaker's saved selection for `sid`, else the default voice.
+    # paraphrase=off speaks the caller's words VERBATIM in that voice.
+    char_key = str(payload.get("character") or "").strip()
+    ch = None
+    if char_key:
+        ch = find_character(char_key)
+        if ch is None:
+            return JSONResponse({"delivered": False, "error": "unknown_character",
+                                 "character": char_key,
+                                 "known": [c["id"] for c in CHARACTERS]}, status_code=404)
+        sel = f"char:{ch['id']}"
+    else:
+        sel = speaker_id.get_voice(sid) if sid else ""
     voice, style = _resolve_speaker_voice(sel)
     voice = voice or DEFAULT_VOICE
-    ch = None
-    if sel.startswith("char:"):
+    if ch is None and sel.startswith("char:"):
         ch = next((c for c in CHARACTERS if c["id"] == sel[5:]), None)
     tn = (ch or {}).get("tuning") or {}
     sp, gd, tp, st = clamp_tuning(float(tn.get("speed", 1.0)), float(tn.get("guidance", 2.0)),
