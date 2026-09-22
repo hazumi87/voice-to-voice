@@ -2364,11 +2364,15 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
         "X-Transcript": urllib.parse.quote(transcript),
         "X-Reply": urllib.parse.quote(reply),
         "X-Speaker": urllib.parse.quote(speaker or "unknown"),
+        # Stable enrollment id (survives renames) — ring-colour hints key on this,
+        # per the home-automation LED contract (relay t:7d41c9e2, 2026-09-21).
+        "X-Speaker-Sid": spk_id or "",
         "X-Speaker-Confidence": f"{spk_conf:.3f}",
         "X-Followup-Listen": "0",   # normal replies never re-arm the mic (dialog only)
         "X-Timing": f"stt={stt_ms};chat={chat_ms};tts={tts_ms};total={total_ms}",
         "Access-Control-Expose-Headers":
-            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Confidence,X-Followup-Listen,X-Timing",
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Sid,X-Speaker-Confidence,"
+            "X-Followup-Listen,X-Timing",
     }
     return Response(content=wav, media_type="audio/wav", headers=headers)
 

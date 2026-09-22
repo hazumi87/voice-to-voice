@@ -396,6 +396,12 @@ class VoiceBridge:
 
         transcript = unquote(resp.headers.get("X-Transcript", ""))
         reply_text = unquote(resp.headers.get("X-Reply", ""))
+        # Ring-hint contract (relay t:7d41c9e2): who the engine identified, carried
+        # as extra data keys on TTS_START. The controller's event handler ignores
+        # unknown keys, so this is safe against any controller version; theirs maps
+        # sid -> scene colour. speaker="unknown"/sid="" means unidentified.
+        spk = unquote(resp.headers.get("X-Speaker", "unknown"))
+        spk_sid = resp.headers.get("X-Speaker-Sid", "")
         # The server flags a reply that expects an immediate spoken answer (the guest
         # enrollment sub-dialog: "tell me your name" / "talk for 10s"). We honor it with
         # the device's native continue-conversation, so the mic re-opens with NO wake
@@ -434,7 +440,8 @@ class VoiceBridge:
                 self._log(f"[followup] announce/continue failed: {e!r}")
         else:
             self.client.send_voice_assistant_event(
-                EV.VOICE_ASSISTANT_TTS_START, {"text": reply_text})
+                EV.VOICE_ASSISTANT_TTS_START,
+                {"text": reply_text, "speaker": spk, "sid": spk_sid})
             self.client.send_voice_assistant_event(
                 EV.VOICE_ASSISTANT_TTS_END, {"url": self.reply_url})
             self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_END, {})
