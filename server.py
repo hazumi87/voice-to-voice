@@ -2412,6 +2412,11 @@ import hmac
 import urllib.error
 
 VOICE_AUTH_PATH = os.path.join(HERE, "voice_auth.json")        # git-ignored; {tokens:{name:token}}
+# Sealed-delivery landing zone: one file per caller, `voice_auth.d/<caller>.token`,
+# holding the raw token (the exec-bridge's `file` target writes exactly that). The
+# sealed transport only runs NUC -> VRPC, so a NUC-side caller mints its own bearer,
+# age-seals it to this host and harbor deliver_sealed drops it here. Git-ignored.
+VOICE_AUTH_DIR = os.path.join(HERE, "voice_auth.d")
 VOICE_DEVICES_PATH = os.path.join(HERE, "voice_devices.json")  # committed device table
 VOICE_TEXT_MAX = 500              # chars; over = 413 too_long (we never truncate silently)
 VOICE_DELIVER_TIMEOUT_S = 30.0    # our playback cap; the engine waits 45 s on its side
@@ -2452,7 +2457,16 @@ def _voice_auth(request: Request):
     tok = hdr[7:].strip()
     if not tok:
         return None
-    tokens = ((_load_json_hot(VOICE_AUTH_PATH, {}) or {}).get("tokens") or {})
+    tokens = dict((_load_json_hot(VOICE_AUTH_PATH, {}) or {}).get("tokens") or {})
+    try:
+        for fn in os.listdir(VOICE_AUTH_DIR):
+            if fn.endswith(".token"):
+                with open(os.path.join(VOICE_AUTH_DIR, fn), "r", encoding="utf-8") as f:
+                    t = f.read().strip()
+                if t:
+                    tokens[fn[:-6]] = t     # a sealed-delivered file wins over the json
+    except OSError:
+        pass
     for name, t in tokens.items():
         if t and hmac.compare_digest(str(t), tok):
             return name

@@ -15,6 +15,7 @@ server.log
 
 # Voice-channel bearer tokens (secrets; minted by tools/mint_voice_token.py)
 voice_auth.json
+voice_auth.d/
 
 # Editor / agent local
 .claude/
