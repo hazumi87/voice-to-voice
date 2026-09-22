@@ -32,7 +32,12 @@ EMBED_DIM = 192
 # Matching params — tune empirically per family during validation (blueprint).
 # Personalization use case → lean permissive, but require a margin so two similar
 # voices don't flip-flop.
-THRESHOLD = 0.55            # cosine floor below which it's 'unknown'
+THRESHOLD = 0.45            # cosine floor below which it's 'unknown'
+# 0.55 -> 0.45 (2026-09-21, measured): Echo Dot far-field turns from a genuinely
+# enrolled speaker score 0.42-0.55 (distance + room reverb), while the WORST
+# cross-speaker best-clip similarity in the enrolled population is 0.14 — a 3x
+# gap remains under 0.45, and MARGIN still arbitrates near-ties. Re-measure the
+# impostor ceiling before enrolling voices likely to be similar (e.g. siblings).
 MARGIN = 0.10              # top match must beat 2nd-best by this, else 'unknown'
 MIN_SPEECH_S = 1.2         # utterances shorter than this abstain (STT still runs)
 MIN_ENROLL_S = 6.0         # reject a NEW speaker's first clip shorter than this
@@ -359,10 +364,14 @@ def identify(raw: bytes, sticky_sid=None, sticky_floor=None):
         second_sim = scored[1][0] if len(scored) > 1 else -1.0
         sticky_ok = (sticky_sid is not None and top_sid == sticky_sid
                      and sticky_floor is not None and top_sim >= sticky_floor)
+        # Diagnostic: who was closest and via which of their clips — a miss that
+        # says "top=Eric#5 at 0.43" reads very differently from "top=Tina#0".
+        top_ci = int(np.argmax(_vectors[top_sid] @ v))
+        top_who = f"top={_registry[top_sid]['name']}#{top_ci}"
         if top_sim < THRESHOLD:
             if sticky_ok:
                 return _registry[top_sid]["name"], top_sim, f"sticky({top_sim:.2f})", top_sid
-            return "unknown", top_sim, f"below_threshold({top_sim:.2f})", None
+            return "unknown", top_sim, f"below_threshold({top_sim:.2f},{top_who})", None
         if (top_sim - second_sim) < MARGIN:
             # Within a session, ambiguity resolves toward the speaker already talking.
             if sticky_ok:
