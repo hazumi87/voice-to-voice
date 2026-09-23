@@ -2351,6 +2351,16 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
                                       True, t0, spk_conf=spk_conf)
         # else: fall through to the normal guest reply below.
 
+    # --- DEVELOPMENT MODE (voice channel P3, docs/voice-channel.md §4.2) ---------
+    # A device whose table entry says mode=development forwards the RAW transcript to
+    # the briefing-table engine instead of the chat LLM, gated on speaker identity,
+    # and speaks a short ack. It never falls back to chat on failure (you asked for
+    # the table; getting a chatbot instead would be maddening). Local intents above
+    # (enrollment, "who am I") never reach here, so they never reach the engine.
+    if (_voice_devices().get(device) or {}).get("mode") == "development":
+        return _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail,
+                         voice, t0, t_stt)
+
     # ollama reachability is the known gaming-mode-killswitch failure point.
     try:
         reply = chat(transcript, personality, speaker_name=spk_name,
@@ -2409,6 +2419,7 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
 # the engine's router decides where the message goes next.
 # ---------------------------------------------------------------------------
 import hmac
+import secrets
 import urllib.error
 
 VOICE_AUTH_PATH = os.path.join(HERE, "voice_auth.json")        # git-ignored; {tokens:{name:token}}
@@ -2771,6 +2782,161 @@ def _voice_deliver_core(payload: dict, who: str):
         with _voice_cooldowns_lock:
             _voice_cooldowns[cd_key] = time.time()
     return status, body
+
+
+# ---------------------------------------------------------------------------
+# DEVELOPMENT MODE — the INBOUND leg (P3). Engine config lives in voice_devices.json
+# under "voice_engine"; the bearer v2v PRESENTS to the engine is read per call from
+# secrets/briefing-table-engine.token (sealed-delivered; never a caller key here).
+# ---------------------------------------------------------------------------
+DEV_ACK_LINES = {
+    "sent": "Sent to {name}.",
+    "held": "You have a draft open there. It's on screen.",
+    "no_channel": "No channel is open.",
+    "not_you": "I'm not sure that's you.",
+    "channel_gone": "That channel isn't open.",
+    "engine_down": "The table isn't answering.",
+}
+_dev_ack_cache: dict = {}         # (voice, line) -> wav; acks repeat, synth once
+_dev_ack_lock = threading.Lock()
+
+
+def _engine_cfg() -> dict:
+    return ((_load_json_hot(VOICE_DEVICES_PATH, {}) or {}).get("voice_engine") or {})
+
+
+def _engine_token() -> str:
+    path = _engine_cfg().get("token_path") or os.path.join("secrets", "briefing-table-engine.token")
+    if not os.path.isabs(path):
+        path = os.path.join(HERE, path)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _engine_inbound(body: dict, timeout: float):
+    """POST the utterance to the engine. Returns (http_status|None, dict)."""
+    url = _engine_cfg().get("inbound_url")
+    if not url:
+        return None, {"error": "engine_unconfigured"}
+    headers = {"Content-Type": "application/json"}
+    tok = _engine_token()
+    if tok:
+        headers["Authorization"] = "Bearer " + tok
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers,
+                                 method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read() or b"{}")
+            return r.status, (data if isinstance(data, dict) else {})
+    except urllib.error.HTTPError as e:
+        try:
+            data = json.loads(e.read() or b"{}")
+        except Exception:  # noqa: BLE001
+            data = {}
+        return e.code, (data if isinstance(data, dict) else {})
+    except Exception as e:  # noqa: BLE001 — refused, DNS, timeout: the engine is unreachable
+        return None, {"error": "unreachable", "detail": repr(e)}
+
+
+def _dev_ack_wav(line: str, voice: str) -> bytes:
+    key = (voice or DEFAULT_VOICE, line)
+    with _dev_ack_lock:
+        wav = _dev_ack_cache.get(key)
+    if wav is None:
+        wav = synth(line, voice or DEFAULT_VOICE, num_step=16)
+        with _dev_ack_lock:
+            if len(_dev_ack_cache) > 64:
+                _dev_ack_cache.clear()
+            _dev_ack_cache[key] = wav
+    return wav
+
+
+def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice, t0, t_stt):
+    """One development-mode turn: speaker gate -> engine inbound -> spoken ack.
+    Every outcome is audible; the X-Route header says which one for the P4 miss log."""
+    utt_id = f"v2v-{device}-{int(time.time() * 1000)}-{secrets.token_hex(2)}"
+    transcript = " ".join((transcript or "").split())   # one line, single spaces (contract §3)
+    match = "sticky" if str(spk_detail or "").startswith("sticky") else "full"
+    status, resp, name = None, {}, None
+    if not spk_id or spk_conf < DEV_TURN_MIN_CONF:
+        outcome, line = "refused_speaker", DEV_ACK_LINES["not_you"]
+    else:
+        cfg = _engine_cfg()
+        body = {
+            "text": transcript, "device": device, "speaker": spk_name or "",
+            "sid": spk_id, "confidence": round(float(spk_conf), 3), "match": match,
+            "utteranceId": utt_id,
+            "replyTo": cfg.get("reply_to") or "https://vrpc-3.tail567253.ts.net/api/voice/deliver",
+        }
+        status, resp = _engine_inbound(body, float(cfg.get("timeout_s", 8)))
+        name = resp.get("name") or "the table"
+        if status == 202 and resp.get("held"):
+            outcome, line = "held", DEV_ACK_LINES["held"]
+        elif status == 202:
+            outcome, line = "sent", DEV_ACK_LINES["sent"].format(name=name)
+        elif status == 409:
+            outcome, line = "no_channel", DEV_ACK_LINES["no_channel"]
+        elif status == 403:
+            outcome, line = "refused_engine", DEV_ACK_LINES["not_you"]
+        elif status == 404:
+            outcome, line = "channel_gone", DEV_ACK_LINES["channel_gone"]
+        else:
+            outcome, line = "engine_down", DEV_ACK_LINES["engine_down"]
+    t_eng = time.time()
+    wav = _dev_ack_wav(line, voice)
+    t_tts = time.time()
+    print(f"[dev-turn] dev={device} spk={spk_name or 'unknown'}({spk_conf:.2f},{match}) "
+          f"-> {outcome} status={status} name={name!r} utt={utt_id} "
+          f"| stt={int((t_stt - t0) * 1000)}ms engine={int((t_eng - t_stt) * 1000)}ms "
+          f"ack={int((t_tts - t_eng) * 1000)}ms | heard={transcript!r} said={line!r}"
+          + (f" | engine_detail={resp.get('error') or resp.get('detail')}"
+             if outcome in ("engine_down", "refused_engine") else ""), flush=True)
+    headers = {
+        "X-Transcript": urllib.parse.quote(transcript),
+        "X-Reply": urllib.parse.quote(line),
+        "X-Speaker": urllib.parse.quote(spk_name or "unknown"),
+        "X-Speaker-Sid": spk_id or "",
+        "X-Speaker-Confidence": f"{spk_conf:.3f}",
+        "X-Followup-Listen": "0",
+        "X-Route": f"dev:{outcome}",
+        "X-Utterance-Id": utt_id,
+        "X-Timing": f"stt={int((t_stt - t0) * 1000)};engine={int((t_eng - t_stt) * 1000)};"
+                    f"ack={int((t_tts - t_eng) * 1000)};total={int((t_tts - t0) * 1000)}",
+        "Access-Control-Expose-Headers":
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Sid,X-Speaker-Confidence,"
+            "X-Followup-Listen,X-Route,X-Utterance-Id,X-Timing",
+    }
+    return Response(content=wav, media_type="audio/wav", headers=headers)
+
+
+@app.post("/api/voice/devices/{device}/mode")
+def voice_device_mode(device: str, request: Request, payload: dict = Body(...)):
+    """Dev-panel toggle: set a device's mode (chat|development). Persists to
+    voice_devices.json (the file is the config; this is just its editor)."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    mode = str(payload.get("mode") or "").strip().lower()
+    if mode not in ("chat", "development"):
+        return JSONResponse({"error": "bad_request", "field": "mode",
+                             "allowed": ["chat", "development"]}, status_code=400)
+    with open(VOICE_DEVICES_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    dev = (data.get("devices") or {}).get(device)
+    if not dev:
+        return JSONResponse({"error": "device_unknown", "device": device}, status_code=404)
+    prev = dev.get("mode", "chat")
+    dev["mode"] = mode
+    tmp = VOICE_DEVICES_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, VOICE_DEVICES_PATH)
+    print(f"[voice] device {device} mode {prev} -> {mode} (by {who})", flush=True)
+    return {"device": device, "mode": mode, "previous": prev}
 
 
 # ---------------------------------------------------------------------------

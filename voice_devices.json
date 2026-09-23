@@ -15,5 +15,12 @@
     "port": 1883,
     "topic": "home/voice/announce",
     "ack_topic": "home/voice/announce/ack"
+  },
+  "voice_engine": {
+    "_comment": "briefing-table engine (dev-mode inbound). Bearer v2v presents is read per call from token_path (sealed-delivered; NOT a caller key). reply_to is what the engine calls back for the spoken reply.",
+    "inbound_url": "https://hazwebserver.tail567253.ts.net:8444/api/voice/inbound",
+    "token_path": "secrets/briefing-table-engine.token",
+    "reply_to": "https://vrpc-3.tail567253.ts.net/api/voice/deliver",
+    "timeout_s": 8
   }
 }

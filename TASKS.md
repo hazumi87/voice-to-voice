@@ -147,3 +147,15 @@
   ~claude-ops/ha-backups/<id>.<ts>.json. Verified: MQTT round trip (spoke, then 429 on repeat) and a real
   HA trigger with the person sensor mocked to Emily -> Dot said "Emily is home." (played 2280 ms).
 - Why MQTT not rest_command: HA's REST token cannot write configuration.yaml; mqtt.publish is built in.
+
+## 2026-09-23T00:58:36Z — Voice channel P3: development-mode branch in /api/converse (inbound leg)
+- Device table `mode: development` (toggle: POST /api/voice/devices/<id>/mode, bearer) routes a turn
+  STT -> speaker gate (DEV_TURN_MIN_CONF 0.50, unknown never forwards) -> POST engine inbound
+  (voice_engine in voice_devices.json; bearer read per call from secrets/briefing-table-engine.token)
+  -> spoken ack (cached per voice+line). Outcomes, all audible: sent / held / no_channel / refused_speaker /
+  refused_engine (403) / channel_gone (404) / engine_down. X-Route + X-Utterance-Id headers; [dev-turn] log
+  line per turn for the P4 miss log. Never falls back to the chat LLM. Local intents (enrollment,
+  identity) return before the branch and never reach the engine.
+- tools/engine_inbound_stub.py stands in for the engine's P2 endpoint. Gate PASSED against it with real
+  audio: Eric's Dot-mic enrollment clip -> dev:sent (engine 141 ms); Tina's clip -> dev:refused_engine;
+  synthesized voice (0.10) -> dev:refused_speaker; stub down -> dev:engine_down. Device restored to chat.
