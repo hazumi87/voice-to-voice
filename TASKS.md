@@ -132,3 +132,18 @@
 - Gate PASSED via https://vrpc-3.tail567253.ts.net: 401/404/413 paths, live delivery on the
   Dot (played_ms 4936, synth 2.6 s), replay of the same replyId returned cached, no re-play.
 - Decision (both agents, Eric to confirm): v2v stays canonical on the VRPC; this work first.
+
+## 2026-09-23T00:12:05Z — Door announcements: HA Welcome Home automations -> Echo Dot (MQTT announcer + cooldown)
+- /api/voice/deliver: explicit `character` param (733afa0); `cooldownKey`/`cooldownSeconds` -> 429 cooldown,
+  no speech; deliver core split from the HTTP wrapper (7e2ab5c).
+- MQTT announcer thread in server.py: subscribes home/voice/announce on NUC mosquitto (100.110.14.59:1883),
+  runs the deliver core as caller "mqtt", acks on home/voice/announce/ack/<replyId>. Config: voice_devices.json
+  `voice_mqtt`. paho-mqtt added to the venv. tools/mqtt_announce_test.py = the HA-shaped round trip.
+- Home Assistant (HAOS box 192.168.1.66; edited as claude-ops over ssh hazwebserver-claude-ops with the
+  provisioned HA_TOKEN per the `home-assistant` skill, installed on this host at user scope): the five
+  "Welcome Home <name>" automations now do: delay 2s -> if person matches -> mqtt.publish deliver body
+  ("<Name> is home.", character jerma, cooldownKey door-<slug>, 600s) -> wait_for_trigger on the ack (30s)
+  -> AEOTec doorbell param 6 ONLY if no ack (v2v unreachable). Originals backed up on the NUC at
+  ~claude-ops/ha-backups/<id>.<ts>.json. Verified: MQTT round trip (spoke, then 429 on repeat) and a real
+  HA trigger with the person sensor mocked to Emily -> Dot said "Emily is home." (played 2280 ms).
+- Why MQTT not rest_command: HA's REST token cannot write configuration.yaml; mqtt.publish is built in.
