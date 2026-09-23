@@ -2573,7 +2573,7 @@ _VOICE_ERR_STATUS = {
     "device_unknown": 404, "device_offline": 502, "device_busy": 409,
     "playback_failed": 502, "synth_unavailable": 503, "too_long": 413,
     "unauthorized": 401, "adapter_unsupported": 502, "empty_wav": 500,
-    "unknown_character": 404,
+    "unknown_character": 404, "cooldown": 429, "internal": 500,
 }
 
 
@@ -2603,31 +2603,44 @@ def voice_devices(request: Request):
     return {"devices": out, "caller": who}
 
 
+_voice_cooldowns: dict = {}       # cooldownKey -> last delivered time
+_voice_cooldowns_lock = threading.Lock()
+
+
 @app.post("/api/voice/deliver")
 def voice_deliver(request: Request, payload: dict = Body(...)):
     """Engine -> v2v: speak `text` on `device`. See docs/voice-channel.md §4.4.
 
     Body: {device, text, channelId?, name?, inReplyTo?, replyId?, sid?, character?,
-           expectsReply?, paraphrase?: off|subtle|full, vendor?}
+           expectsReply?, paraphrase?: off|subtle|full, vendor?,
+           cooldownKey?, cooldownSeconds?}
     `character` (explicit voice, e.g. a Home Assistant announcement) beats `sid`.
+    `cooldownKey` + `cooldownSeconds`: at most one delivery per key per window; a
+    repeat inside the window answers 429 {delivered:false, error:"cooldown"} without
+    speaking (the door announcer's "say it once" rule, enforced here, not in HA).
     200 {delivered:true, played_ms, device, ...} only AFTER playback finished.
     Otherwise {delivered:false, error} with a matching status (see _VOICE_ERR_STATUS)."""
     who = _voice_auth(request)
     if not who:
         return _voice_unauth()
+    status, body = _voice_deliver_core(payload, who)
+    return JSONResponse(body, status_code=status)
+
+
+def _voice_deliver_core(payload: dict, who: str):
+    """The deliver pipeline minus HTTP auth: validate -> voice -> synth -> push.
+    Returns (status, body). Shared by the HTTP endpoint and the MQTT announcer."""
     t0 = time.time()
     device = str(payload.get("device") or "").strip()
     text = str(payload.get("text") or "").strip()
     reply_id = str(payload.get("replyId") or "").strip()
     if not device:
-        return JSONResponse({"delivered": False, "error": "bad_request", "field": "device"},
-                            status_code=400)
+        return 400, {"delivered": False, "error": "bad_request", "field": "device"}
     if not text:
-        return JSONResponse({"delivered": False, "error": "bad_request", "field": "text"},
-                            status_code=400)
+        return 400, {"delivered": False, "error": "bad_request", "field": "text"}
     if len(text) > VOICE_TEXT_MAX:
-        return JSONResponse({"delivered": False, "error": "too_long", "max": VOICE_TEXT_MAX,
-                             "len": len(text)}, status_code=413)
+        return 413, {"delivered": False, "error": "too_long", "max": VOICE_TEXT_MAX,
+                             "len": len(text)}
 
     # Idempotency: the same replyId never plays twice; it gets the first outcome back.
     if reply_id:
@@ -2640,12 +2653,28 @@ def voice_deliver(request: Request, payload: dict = Body(...)):
         if hit:
             body = dict(hit[2])
             body["replayed"] = True
-            return JSONResponse(body, status_code=hit[1])
+            return hit[1], body
 
     dev = _voice_devices().get(device)
     if not dev:
-        return JSONResponse({"delivered": False, "error": "device_unknown", "device": device},
-                            status_code=404)
+        return 404, {"delivered": False, "error": "device_unknown", "device": device}
+
+    # Cooldown: "announce once, then stay quiet for a while" for callers whose trigger
+    # can repeat (a door lock reporting several unlock transitions, a buggy relay).
+    cd_key = str(payload.get("cooldownKey") or "").strip()
+    try:
+        cd_s = float(payload.get("cooldownSeconds") or 0)
+    except (TypeError, ValueError):
+        cd_s = 0.0
+    if cd_key and cd_s > 0:
+        with _voice_cooldowns_lock:
+            last = _voice_cooldowns.get(cd_key, 0.0)
+        left = cd_s - (time.time() - last)
+        if left > 0:
+            print(f"[voice] cooldown '{cd_key}' from={who}: {left:.0f}s left, not speaking",
+                  flush=True)
+            return 429, {"delivered": False, "error": "cooldown", "cooldownKey": cd_key,
+                         "retryAfterS": int(left), "device": device}
 
     sid = str(payload.get("sid") or "").strip()
     expects_reply = bool(payload.get("expectsReply", False))
@@ -2662,9 +2691,9 @@ def voice_deliver(request: Request, payload: dict = Body(...)):
     if char_key:
         ch = find_character(char_key)
         if ch is None:
-            return JSONResponse({"delivered": False, "error": "unknown_character",
+            return 404, {"delivered": False, "error": "unknown_character",
                                  "character": char_key,
-                                 "known": [c["id"] for c in CHARACTERS]}, status_code=404)
+                                 "known": [c["id"] for c in CHARACTERS]}
         sel = f"char:{ch['id']}"
     else:
         sel = speaker_id.get_voice(sid) if sid else ""
@@ -2695,12 +2724,12 @@ def voice_deliver(request: Request, payload: dict = Body(...)):
         wav = synth(spoken, voice, num_step=st, speed=sp, guidance_scale=gd,
                     class_temperature=tp)
     except GpuBusy as e:
-        return JSONResponse({"delivered": False, "error": "synth_unavailable",
-                             "detail": str(e)}, status_code=503)
+        return 503, {"delivered": False, "error": "synth_unavailable",
+                             "detail": str(e)}
     except Exception as e:  # noqa: BLE001
         print(f"[voice] synth failed: {e!r}", flush=True)
-        return JSONResponse({"delivered": False, "error": "synth_unavailable",
-                             "detail": repr(e)}, status_code=503)
+        return 503, {"delivered": False, "error": "synth_unavailable",
+                             "detail": repr(e)}
     try:
         wav = _concat_wavs([_earcon_wav(), wav])
     except Exception as e:  # noqa: BLE001 — earcon is a nicety; the text must still play
@@ -2738,7 +2767,83 @@ def voice_deliver(request: Request, payload: dict = Body(...)):
     if reply_id:
         with _voice_reply_cache_lock:
             _voice_reply_cache[reply_id] = (time.time(), status, body)
-    return JSONResponse(body, status_code=status)
+    if body.get("delivered") and cd_key:
+        with _voice_cooldowns_lock:
+            _voice_cooldowns[cd_key] = time.time()
+    return status, body
+
+
+# ---------------------------------------------------------------------------
+# MQTT ANNOUNCER — Home Assistant (and anything else on the house broker) can make a
+# device speak without an HTTP client: publish the deliver body as JSON on
+# `voice_mqtt.topic`; the outcome is published on `<ack_topic>/<replyId>` so an
+# automation can wait for it and fall back only when v2v is genuinely unreachable
+# (no ack at all). Why MQTT: HA's rest_command needs configuration.yaml, which its
+# REST token cannot write; mqtt.publish is a built-in service. The broker is the NUC
+# mosquitto (anonymous on the LAN) — same trust level as every other home event.
+# Config lives in voice_devices.json under "voice_mqtt"; absent = announcer off.
+# ---------------------------------------------------------------------------
+def _voice_mqtt_cfg() -> dict:
+    return ((_load_json_hot(VOICE_DEVICES_PATH, {}) or {}).get("voice_mqtt") or {})
+
+
+def _voice_mqtt_thread():
+    try:
+        import paho.mqtt.client as mqtt
+    except ImportError:
+        print("[voice-mqtt] paho-mqtt not installed; announcer off", flush=True)
+        return
+    cfg = _voice_mqtt_cfg()
+    if not cfg.get("broker"):
+        print("[voice-mqtt] no voice_mqtt.broker in voice_devices.json; announcer off",
+              flush=True)
+        return
+    topic = cfg.get("topic", "home/voice/announce")
+    ack_topic = cfg.get("ack_topic", "home/voice/announce/ack")
+
+    def on_connect(client, userdata, flags, reason_code, properties=None):
+        client.subscribe(topic, qos=1)
+        print(f"[voice-mqtt] connected {cfg['broker']}:{cfg.get('port', 1883)} "
+              f"subscribed {topic}", flush=True)
+
+    def on_message(client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode("utf-8", "replace") or "{}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[voice-mqtt] bad payload on {msg.topic}: {e!r}", flush=True)
+            return
+        if not isinstance(payload, dict):
+            return
+        reply_id = str(payload.get("replyId") or f"mqtt-{int(time.time() * 1000)}")
+        payload["replyId"] = reply_id
+        # Run OFF the network thread so a slow synth/playback never stalls the client
+        # loop (keepalives would lapse and the broker would drop us mid-announce).
+        def _run():
+            try:
+                status, body = _voice_deliver_core(payload, "mqtt")
+            except Exception as e:  # noqa: BLE001
+                status, body = 500, {"delivered": False, "error": "internal", "detail": repr(e)}
+            body["status"] = status
+            try:
+                client.publish(f"{ack_topic}/{reply_id}", json.dumps(body), qos=1)
+            except Exception as e:  # noqa: BLE001
+                print(f"[voice-mqtt] ack publish failed: {e!r}", flush=True)
+        threading.Thread(target=_run, name=f"voice-mqtt:{reply_id}", daemon=True).start()
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="voice-to-voice")
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.reconnect_delay_set(min_delay=2, max_delay=60)
+    while True:
+        try:
+            client.connect(cfg["broker"], int(cfg.get("port", 1883)), keepalive=30)
+            client.loop_forever(retry_first_connection=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[voice-mqtt] connection lost/failed: {e!r}; retry in 10s", flush=True)
+            time.sleep(10)
+
+
+threading.Thread(target=_voice_mqtt_thread, name="voice-mqtt", daemon=True).start()
 
 
 # Static front-end (mounted last so /api/* wins).

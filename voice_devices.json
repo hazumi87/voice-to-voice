@@ -1,5 +1,5 @@
 {
-  "_comment": "Voice-channel device table (docs/voice-channel.md in briefing-table). Static name; hot-reloaded by server.py on change. `device` ids are the roster names the bridge uses. `mode` is the P3 dev-mode flag (chat|development). `room` feeds the origin envelope for location-aware personas later. `announce_url` is the Dot bridge's loopback ingress — never a tailnet URL.",
+  "_comment": "Voice-channel device table (docs/voice-channel.md in briefing-table). Static name; hot-reloaded by server.py on change. `device` ids are the roster names the bridge uses. `mode` is the P3 dev-mode flag (chat|development). `room` feeds the origin envelope for location-aware personas later. `announce_url` is the Dot bridge's loopback ingress \u2014 never a tailnet URL.",
   "devices": {
     "echo-dot-biscuit": {
       "kind": "echo",
@@ -8,5 +8,12 @@
       "room": "",
       "mode": "chat"
     }
+  },
+  "voice_mqtt": {
+    "_comment": "MQTT announcer: publish a deliver body as JSON on `topic`; outcome comes back on `<ack_topic>/<replyId>`. Broker = NUC mosquitto (tailnet IP). Remove `broker` to disable.",
+    "broker": "100.110.14.59",
+    "port": 1883,
+    "topic": "home/voice/announce",
+    "ack_topic": "home/voice/announce/ack"
   }
 }
