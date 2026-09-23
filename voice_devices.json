@@ -17,10 +17,10 @@
     "ack_topic": "home/voice/announce/ack"
   },
   "voice_engine": {
-    "_comment": "briefing-table engine (dev-mode inbound). Bearer v2v presents is read per call from token_path (sealed-delivered; NOT a caller key). reply_to is what the engine calls back for the spoken reply.",
+    "_comment": "briefing-table engine (dev-mode inbound). Bearer v2v presents is read per call from token_path (sealed-delivered; NOT a caller key). reply_to is what the engine calls back for the spoken reply. reply_to uses the VRPC tailnet IP: the NUC has no MagicDNS for vrpc-3.tail567253.ts.net.",
     "inbound_url": "https://hazwebserver.tail567253.ts.net:8444/api/voice/inbound",
     "token_path": "secrets/briefing-table-engine.token",
-    "reply_to": "https://vrpc-3.tail567253.ts.net/api/voice/deliver",
+    "reply_to": "http://100.108.144.20:8221/api/voice/deliver",
     "timeout_s": 8
   }
 }

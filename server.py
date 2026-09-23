@@ -2792,11 +2792,13 @@ def _voice_deliver_core(payload: dict, who: str):
 DEV_ACK_LINES = {
     "sent": "Sent to {name}.",
     "held": "You have a draft open there. It's on screen.",
+    "busy": "They're busy. I've put it on screen.",
     "no_channel": "No channel is open.",
     "not_you": "I'm not sure that's you.",
     "channel_gone": "That channel isn't open.",
     "engine_down": "The table isn't answering.",
 }
+_CTRL_RE = re.compile("[" + "".join(chr(c) for c in range(0, 32)) + chr(127) + "]")
 _dev_ack_cache: dict = {}         # (voice, line) -> wav; acks repeat, synth once
 _dev_ack_lock = threading.Lock()
 
@@ -2858,7 +2860,9 @@ def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
     """One development-mode turn: speaker gate -> engine inbound -> spoken ack.
     Every outcome is audible; the X-Route header says which one for the P4 miss log."""
     utt_id = f"v2v-{device}-{int(time.time() * 1000)}-{secrets.token_hex(2)}"
-    transcript = " ".join((transcript or "").split())   # one line, single spaces (contract §3)
+    # Contract §3 + amendment 6: one line, single spaces, NO C0/DEL control characters
+    # (the engine answers 400 on any). Whisper can emit tabs/newlines; normalise all.
+    transcript = " ".join(_CTRL_RE.sub(" ", transcript or "").split())
     match = "sticky" if str(spk_detail or "").startswith("sticky") else "full"
     status, resp, name = None, {}, None
     if not spk_id or spk_conf < DEV_TURN_MIN_CONF:
@@ -2873,8 +2877,10 @@ def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
         }
         status, resp = _engine_inbound(body, float(cfg.get("timeout_s", 8)))
         name = resp.get("name") or "the table"
-        if status == 202 and resp.get("held"):
-            outcome, line = "held", DEV_ACK_LINES["held"]
+        if status == 202 and resp.get("held") == "busy":
+            outcome, line = "held_busy", DEV_ACK_LINES["busy"]
+        elif status == 202 and resp.get("held"):
+            outcome, line = "held_draft", DEV_ACK_LINES["held"]
         elif status == 202:
             outcome, line = "sent", DEV_ACK_LINES["sent"].format(name=name)
         elif status == 409:
