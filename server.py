@@ -2418,6 +2418,7 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
 # We NEVER re-route: a device that is unknown/offline/busy is reported as such and
 # the engine's router decides where the message goes next.
 # ---------------------------------------------------------------------------
+import datetime
 import hmac
 import secrets
 import urllib.error
@@ -2789,10 +2790,11 @@ def _voice_deliver_core(payload: dict, who: str):
 # under "voice_engine"; the bearer v2v PRESENTS to the engine is read per call from
 # secrets/briefing-table-engine.token (sealed-delivered; never a caller key here).
 # ---------------------------------------------------------------------------
+# Eric's ruling (2026-09-24, live test): hands-free means NOTHING is held. The engine
+# no longer holds on draft/busy, and a 202 must never produce a hold cue here. The old
+# "you have a draft open" / "they're busy" lines are retired, not just unused.
 DEV_ACK_LINES = {
     "sent": "Sent to {name}.",
-    "held": "You have a draft open there. It's on screen.",
-    "busy": "They're busy. I've put it on screen.",
     "no_channel": "No channel is open.",
     "not_you": "I'm not sure that's you.",
     "channel_gone": "That channel isn't open.",
@@ -2843,6 +2845,27 @@ def _engine_inbound(body: dict, timeout: float):
         return None, {"error": "unreachable", "detail": repr(e)}
 
 
+# Per-utterance journal (Eric, 2026-09-24: "logs, concrete not inferred" — both sides
+# must be able to reconstruct a turn by utteranceId). One JSON line per dev-mode turn,
+# appended to working/voice_turns.jsonl and mirrored onto the agent-share so the NUC
+# engine agent can read it with fetch_share("voice-to-voice/voice_turns.jsonl").
+VOICE_JOURNAL_PATH = os.path.join(HERE, "working", "voice_turns.jsonl")
+VOICE_JOURNAL_MIRROR = r"F:\agent-share\voice-to-voice\voice_turns.jsonl"
+_voice_journal_lock = threading.Lock()
+
+
+def _voice_journal(entry: dict):
+    line = json.dumps(entry, ensure_ascii=False) + "\n"
+    with _voice_journal_lock:
+        for path in (VOICE_JOURNAL_PATH, VOICE_JOURNAL_MIRROR):
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(line)
+            except OSError as e:
+                print(f"[voice-journal] write failed {path}: {e!r}", flush=True)
+
+
 def _dev_ack_wav(line: str, voice: str) -> bytes:
     key = (voice or DEFAULT_VOICE, line)
     with _dev_ack_lock:
@@ -2877,11 +2900,9 @@ def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
         }
         status, resp = _engine_inbound(body, float(cfg.get("timeout_s", 8)))
         name = resp.get("name") or "the table"
-        if status == 202 and resp.get("held") == "busy":
-            outcome, line = "held_busy", DEV_ACK_LINES["busy"]
-        elif status == 202 and resp.get("held"):
-            outcome, line = "held_draft", DEV_ACK_LINES["held"]
-        elif status == 202:
+        if status == 202:
+            # Any 202 is "sent" — even if the engine still reports held (transition
+            # window while its hold removal lands). The held flag is journaled.
             outcome, line = "sent", DEV_ACK_LINES["sent"].format(name=name)
         elif status == 409:
             outcome, line = "no_channel", DEV_ACK_LINES["no_channel"]
@@ -2897,9 +2918,17 @@ def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
     print(f"[dev-turn] dev={device} spk={spk_name or 'unknown'}({spk_conf:.2f},{match}) "
           f"-> {outcome} status={status} name={name!r} utt={utt_id} "
           f"| stt={int((t_stt - t0) * 1000)}ms engine={int((t_eng - t_stt) * 1000)}ms "
-          f"ack={int((t_tts - t_eng) * 1000)}ms | heard={transcript!r} said={line!r}"
-          + (f" | engine_detail={resp.get('error') or resp.get('detail')}"
-             if outcome in ("engine_down", "refused_engine") else ""), flush=True)
+          f"ack={int((t_tts - t_eng) * 1000)}ms | heard={transcript!r} said={line!r} "
+          f"| engine_body={json.dumps(resp, ensure_ascii=False)[:300]}", flush=True)
+    _voice_journal({
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+        "utteranceId": utt_id, "device": device, "mode": "development",
+        "text": transcript, "speaker": spk_name or "", "sid": spk_id or "",
+        "confidence": round(float(spk_conf), 3), "match": match,
+        "engine_status": status, "engine_body": resp, "outcome": outcome, "cue": line,
+        "timing_ms": {"stt": int((t_stt - t0) * 1000), "engine": int((t_eng - t_stt) * 1000),
+                      "ack": int((t_tts - t_eng) * 1000), "total": int((t_tts - t0) * 1000)},
+    })
     headers = {
         "X-Transcript": urllib.parse.quote(transcript),
         "X-Reply": urllib.parse.quote(line),
