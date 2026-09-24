@@ -23,7 +23,11 @@
       "password": "",
       "reply_gain": 1.0,
       "filler_set": "jerma",
-      "enabled": true
+      "enabled": true,
+      "silence_hang_s": 1.2,
+      "no_speech_timeout_s": 15,
+      "max_utterance_s": 90,
+      "listen_cue": true
     }
   ]
 }

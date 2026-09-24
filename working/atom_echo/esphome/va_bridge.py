@@ -66,6 +66,9 @@ MIC_RATE = 16000                  # devices stream 16kHz mono 16-bit PCM (raw)
 VAD_FRAME_MS = 20
 VAD_FRAME_BYTES = MIC_RATE * 2 * VAD_FRAME_MS // 1000     # 16k*2B*20ms = 640B
 VAD_AGGRESSIVENESS = 2            # 0..3
+# Turn timing DEFAULTS; each device may override them in va_bridge_devices.json with
+# "silence_hang_s", "no_speech_timeout_s", "max_utterance_s" (Eric, 2026-09-24: a
+# development-mode user may dictate for a while, so the Dot runs with a long cap).
 SILENCE_HANG = 0.8               # seconds of non-speech after speech => end
 NO_SPEECH_TIMEOUT = 10.0          # give up if no speech ever detected
 MAX_UTTER = 15.0                  # hard cap (backstop against runaway background noise)
@@ -79,6 +82,10 @@ MAX_UTTER = 15.0                  # hard cap (backstop against runaway backgroun
 # the first FOLLOWUP_GUARD_S of audio: let the speaker tail/echo decay so only the
 # user's real speech is captured.
 FOLLOWUP_GUARD_S = 0.9
+# Listen cue: mic audio is dropped while the beep plays (until the device confirms it
+# finished), never longer than LISTEN_CUE_MAX_S; LISTEN_CUE_TAIL_S covers the room decay.
+LISTEN_CUE_MAX_S = 2.0
+LISTEN_CUE_TAIL_S = 0.08
 
 # Energy gate to ignore far-field background talk (e.g. a TV) that webrtcvad would
 # otherwise score as continuous speech and never let the turn end. A frame only
@@ -136,6 +143,7 @@ def _load_cue(name: str) -> bytes | None:
     except OSError:
         return None
 _CUE_NO_SPEECH = _load_cue("cue_no_speech.wav")      # engine 422: nothing transcribed
+_CUE_LISTEN = _load_cue("cue_listen.wav")        # soft bass beep = "speak now" (mic open)
 _CUE_ENGINE_FAIL = _load_cue("cue_engine_fail.wav")  # engine down/other failure
 
 
@@ -204,6 +212,17 @@ class VoiceBridge:
         # engine round trip, so the think-gap isn't dead silence. Plays only after
         # capture ends (never over the user's speech) and no filler contains the
         # wake phrase (phrase-free playback proven barge-safe even pre-AEC-fix).
+        # Listen cue (Eric, 2026-09-24): a soft bass beep announced the moment the mic
+        # opens, so the user knows when to speak without watching the ring. Per-device
+        # "listen_cue": false disables it. Mic audio is dropped until the device reports
+        # the cue finished, so the beep is never in the clip and can't trip speech-start.
+        self.listen_cue = bool(dev.get("listen_cue", True))
+        self.silence_hang = float(dev.get("silence_hang_s", SILENCE_HANG))
+        self.no_speech_timeout = float(dev.get("no_speech_timeout_s", NO_SPEECH_TIMEOUT))
+        self.max_utter = float(dev.get("max_utterance_s", MAX_UTTER))
+        self.cue_key = f"{self.dev_id}-cue"
+        self.cue_url = (f"http://{cfg['server_public_ip']}:{cfg['server_port']}"
+                        f"/reply/{self.cue_key}.wav")
         self._fillers: list[bytes] = []
         self._last_filler = -1
         self.filler_key = f"{self.dev_id}-filler"
@@ -294,10 +313,32 @@ class VoiceBridge:
         self._next_run_guard = 0.0
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_START, {})
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_START, {})
+        if self.listen_cue and _CUE_LISTEN:
+            # Hold the mic closed (drop audio) until the cue has played; capped so a
+            # cue that never confirms can't eat the whole turn.
+            self._guard_until = max(self._guard_until, now + LISTEN_CUE_MAX_S)
+            asyncio.create_task(self._play_listen_cue())
         if self._watchdog:
             self._watchdog.cancel()
         self._watchdog = asyncio.create_task(self._end_watchdog())
         return 0   # 0/None => API-audio path (audio arrives via handle_audio; no UDP)
+
+    async def _play_listen_cue(self):
+        """Beep = 'speak now'. Announced over the open run like the filler is; when the
+        device confirms playback the guard is released and the clip starts clean."""
+        t0 = self._loop.time()
+        try:
+            _reply_store[self.cue_key] = _CUE_LISTEN
+            await self.client.send_voice_assistant_announcement_await_response(
+                media_id=self.cue_url, timeout=5.0)
+            self._log(f"[cue] listen beep played in {int((self._loop.time() - t0) * 1000)}ms")
+        except Exception as e:  # noqa: BLE001
+            self._log(f"[cue] listen beep skipped ({e!r})")
+        finally:
+            # Release the guard: the user may already be talking over the beep's tail.
+            self._guard_until = min(self._guard_until, self._loop.time() + LISTEN_CUE_TAIL_S)
+            self._start_t = self._loop.time()    # no-speech timeout counts from "speak now"
+            self._last_voice_t = self._start_t
 
     async def handle_audio(self, audio: bytes, audio2=None):
         if self._processing:
@@ -348,14 +389,14 @@ class VoiceBridge:
                     return
                 now = self._loop.time()
                 if not self._heard_speech:
-                    if now - self._start_t > NO_SPEECH_TIMEOUT:
+                    if now - self._start_t > self.no_speech_timeout:
                         self._log("[watchdog] no speech detected — aborting")
                         await self._abort()
                         return
                     continue
                 silence = now - self._last_voice_t
-                if silence > SILENCE_HANG or (now - self._start_t) > MAX_UTTER:
-                    why = "silence" if silence > SILENCE_HANG else "maxlen"
+                if silence > self.silence_hang or (now - self._start_t) > self.max_utter:
+                    why = "silence" if silence > self.silence_hang else "maxlen"
                     self._log(f"[watchdog] end-of-utterance ({why}, {len(self._buf)}B)")
                     await self._end_and_process()
                     return
