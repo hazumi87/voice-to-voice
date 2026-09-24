@@ -85,8 +85,16 @@ FOLLOWUP_GUARD_S = 0.9
 # counts as "still talking" if it's speech AND loud enough relative to THIS
 # speaker's peak level — so a close, loud user keeps the turn open, but quiet
 # room/TV audio doesn't. Adaptive (frac of running peak) so soft talkers aren't cut.
-VOICED_ABS_FLOOR = 60            # absolute rms floor; below this is never "voiced"
+# Measured on the Dot mic 2026-09-23 (Eric's enrollment clips vs a silent capture):
+# speech frames p10~100-770 / median ~1800 / p90 3000-5000; room noise 44-98. The old
+# floor of 60 sat INSIDE the noise band, so after the NUC/VRPC reboot three frames of
+# hiss counted as "speech started" the instant the stream opened, the 0.8 s silence
+# hang closed the turn before Eric spoke, and Whisper hallucinated a phrase from the
+# empty clip ("Okay", "check.", "Stay warm."). 200 is 2x above the loudest noise
+# frame and ~9x below median speech.
+VOICED_ABS_FLOOR = 200           # absolute rms floor; below this is never "voiced"
 VOICED_PEAK_FRAC = 0.18         # ...and must clear this fraction of the running peak
+SPEECH_START_FRAMES = 6         # voiced 20 ms frames (120 ms) before a turn counts as speech
 
 # Reconnect backoff per device (C7: the EchoMuse per-device port is torn down
 # whenever the physical Dot disconnects — never assume-always-listening).
@@ -322,7 +330,7 @@ class VoiceBridge:
             if voiced:
                 self._speech_frames += 1
                 self._last_voice_t = now
-                if not self._heard_speech and self._speech_frames >= 3:
+                if not self._heard_speech and self._speech_frames >= SPEECH_START_FRAMES:
                     self._heard_speech = True
                     self._log("[audio] speech started")
         if self._audio_chunks % 25 == 0:
@@ -364,6 +372,23 @@ class VoiceBridge:
         self._log(f"[stop] server_side={server_side} bytes={n} ({n/32000.0:.2f}s)")
         await self._end_and_process()
 
+    def _dump_capture(self, pcm: bytes):
+        try:
+            d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+            last = os.path.join(d, "last_capture.wav")
+            prev = os.path.join(d, "previous_capture.wav")
+            if os.path.exists(last):
+                os.replace(last, prev)
+            with wave.open(last, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(MIC_RATE)
+                w.writeframes(pcm)
+            self._log(f"[capture] {len(pcm)}B ({len(pcm) / (MIC_RATE * 2):.2f}s, "
+                      f"rms={audioop.rms(pcm, 2) if pcm else 0}) -> last_capture.wav")
+        except Exception as e:  # noqa: BLE001 — never let a debug dump break a turn
+            self._log(f"[capture] dump failed: {e!r}")
+
     async def _end_and_process(self):
         if self._processing:
             return
@@ -373,6 +398,10 @@ class VoiceBridge:
         # Tell the device the user stopped talking so it stops streaming mic audio.
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_VAD_END, {})
         n = len(self._buf)
+        # Debug transparency: every captured turn lands at working/atom_echo/
+        # last_capture.wav (previous_capture.wav = the one before), so a "it didn't
+        # hear me" report can be diagnosed from the raw mic audio instead of rms guesses.
+        self._dump_capture(bytes(self._buf))
         if n < 1600:
             self._log(f"[end] too little audio ({n}B), aborting")
             self._run_end()
