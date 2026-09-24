@@ -2246,8 +2246,8 @@ def _gf_voice_response(line, name, voice_id, style, transcript, followup, t0,
 # back and forth. In-process state is fine at crawl: one engine instance owns all
 # devices; this moves to the NUC state server with the rest of session state.
 _device_sessions: dict = {}
-DEVICE_SESSION_TTL_S = 300          # sliding window; each recognized turn extends it
-STICKY_THRESHOLD = 0.40             # session speaker floor; noise scores ~0.05-0.09
+DEVICE_SESSION_TTL_S = 1800         # 30 min sliding window; each recognized turn extends it
+STICKY_THRESHOLD = 0.30             # session speaker floor; noise ~0.05-0.09, impostor max 0.30
 
 
 @app.post("/api/converse")

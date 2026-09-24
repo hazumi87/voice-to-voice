@@ -32,7 +32,11 @@ EMBED_DIM = 192
 # Matching params — tune empirically per family during validation (blueprint).
 # Personalization use case → lean permissive, but require a margin so two similar
 # voices don't flip-flop.
-THRESHOLD = 0.45            # cosine floor below which it's 'unknown'
+# 0.45 -> 0.35 (2026-09-23): offline eval of windows cut from every enrollment clip:
+# Eric's own 0.8 s windows p10 0.32 / p50 0.49, 1.2 s p10 0.47; the best IMPOSTOR
+# window (Tina/Zachary vs Eric, n=900) maxed at 0.30, p90 0.17. Short Dot turns
+# ("can you hear me okay" = 0.8 s of speech) were landing at 0.37 and going unknown.
+THRESHOLD = 0.35            # cosine floor below which it's 'unknown'
 # 0.55 -> 0.45 (2026-09-21, measured): Echo Dot far-field turns from a genuinely
 # enrolled speaker score 0.42-0.55 (distance + room reverb), while the WORST
 # cross-speaker best-clip similarity in the enrolled population is 0.14 — a 3x
