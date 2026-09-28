@@ -169,6 +169,18 @@ class H(BaseHTTPRequestHandler):
                 ch = STATE["channels"].pop(body.get("channelId") or "", None)
             return self._json(200, {"ok": True, "closed": bool(ch)})
         parts = u.path.split("/")
+        if len(parts) == 6 and parts[1:4] == ["api", "voice", "rooms"] and parts[5] == "verify":
+            rid = parts[4]
+            with LOCK:
+                ch = STATE["channels"].get("room:" + rid)
+                r = STATE["rooms"].get(rid)
+                if not ch or not r:
+                    return self._json(409, {"error": "no_channel"})
+                if body.get("on") is not True:
+                    return self._json(403, {"error": "tighten_only"})
+                r["settings"]["voice"]["idInRoom"] = True
+                return self._json(200, {"voice": {"connected": True, "device": ch["device"], "muted": ch["muted"],
+                                                  "waiting": ch["waiting"], "idInRoom": True}})
         if len(parts) == 6 and parts[1:4] == ["api", "voice", "rooms"] and parts[5] in ("mute", "disconnect", "waiting"):
             rid = parts[4]
             with LOCK:

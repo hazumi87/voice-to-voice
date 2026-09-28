@@ -87,12 +87,16 @@ def run(args) -> dict:
     with open(CASES_PATH, encoding="utf-8") as f:
         spec = json.load(f)
     ctx = spec["context"]
+    contexts = spec.get("contexts") or {"default": ctx}
     results = []
     # -- deterministic layers first: these must be perfect and cost nothing --------------
     ns_fail = []
     for t in spec["non_sequiturs"]["ignore"]:
         if not room_agent.is_non_sequitur(t):
             ns_fail.append(("should ignore", t))
+    for t in spec["non_sequiturs"].get("ignore_unverified", []):
+        if not room_agent.is_non_sequitur(t):
+            ns_fail.append(("should ignore (unverified)", t))
     for t in spec["non_sequiturs"]["keep"]:
         if room_agent.is_non_sequitur(t):
             ns_fail.append(("should keep", t))
@@ -127,8 +131,17 @@ def run(args) -> dict:
                 heard = None
                 print(f"  [stt] {case['id']}: failed {e!r}; routing the typed text", flush=True)
         routed_text = heard if heard else text
-        dec = room_agent.route(routed_text, ctx, model=args.model)
+        case_ctx = contexts.get(case.get("context") or "default", ctx)
+        dec = room_agent.route(routed_text, case_ctx, model=args.model)
         ok, why = check_case(case, dec)
+        if ok and case.get("class") == "unverified":
+            # No identity talk: the speaker gate is off for this room by the room's choice.
+            blob = " ".join(str(v) for v in (dec.get("answer"), dec.get("raw")) if v).lower()
+            if any(w in blob for w in ("who are you", "who is this", "identify", "not sure that", "recogni", "verify", "unverified")):
+                ok, why = False, "identity talk in an unverified-room answer"
+            det = room_agent.answer_room_question(routed_text, case_ctx)
+            if det and any(w in det.lower() for w in ("who are you", "identify", "verif", "recogni")):
+                ok, why = False, "identity talk in the deterministic answer"
         row = {"id": case["id"], "class": case["class"], "text": text, "heard": heard,
                "routed_text": routed_text, "expect": case["expect"],
                "action": dec["action"], "to": dec.get("to"), "answer": dec.get("answer"),

@@ -118,6 +118,11 @@ class EngineClient:
     def lines(self, room_id: str, q: str, limit: int = 5):
         return self._call("GET", f"/api/voice/rooms/{room_id}/lines", params={"q": q, "limit": limit})
 
+    def verify(self, room_id: str, on: bool = True):
+        # §10.1 tighten-only: POST /api/voice/rooms/:id/verify {on:true} -> 200 {voice};
+        # {on:false} is refused (403) by the engine and never sent by the spoken path.
+        return self._call("POST", f"/api/voice/rooms/{room_id}/verify", {"on": bool(on)})
+
     def clear_waiting(self, room_id: str):
         # E1c: POST /api/voice/rooms/:id/waiting {waiting:false} -> 200 {voice}. Called after
         # "what's waiting" / "say that again" have been answered (followupTo clears it too).
@@ -200,6 +205,9 @@ LINES = {
     "waiting_many": "{n} messages are waiting. The latest, from {author}: {body}",
     "say_again": "{author} said: {body}",
     "nothing_to_repeat": "Nothing has been said yet.",
+    "voice_id_on": "Voice ID is on for this room.",
+    "voice_id_already_on": "Voice ID is already on.",
+    "voice_id_off_refused": "You can turn voice ID off from the voice tool or room settings.",
     "open_messages": "{n} of your messages are still open, the oldest {ago}.",
 }
 
@@ -499,6 +507,20 @@ class RoomVoice:
             self.engine.clear_waiting(room_id)
             return TurnResult(_fmt("say_again", author=_spoken_handle(ls.get("author"), st.get("lead")),
                                    body=ls["body"]), "say_again", expects_reply=True)
+        if kind == "voice_id_off":
+            return TurnResult(_fmt("voice_id_off_refused"), "voice_id_off_refused")
+        if kind == "voice_id_on":
+            if (st.get("settings") or {}).get("idInRoom", True) is not False:
+                return TurnResult(_fmt("voice_id_already_on"), "voice_id_on", engineStatus=None)
+            status, body = self.engine.verify(room_id, True)
+            if status == 200:
+                settings = dict(st.get("settings") or {})
+                settings["idInRoom"] = True
+                self.state.update(device, settings=settings)
+                return TurnResult(_fmt("voice_id_on"), "voice_id_on", engineStatus=status)
+            if status in (404, 409):
+                return self.self_heal(device, status)
+            return TurnResult(_fmt("engine_down"), "voice_id_on_failed", engineStatus=status, body=body)
         if kind == "whats_waiting":
             status, ctx = self.engine.context(room_id)
             if status in (404, 409):

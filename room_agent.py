@@ -94,7 +94,23 @@ def parse_intent(text: str) -> dict | None:
         return {"intent": "whats_waiting"}
     if _SAY_AGAIN.match(t):
         return {"intent": "say_again"}
+    m = _VOICE_ID.match(t)
+    if m:
+        return {"intent": "voice_id_on" if _voice_id_on(m) else "voice_id_off"}
     return None
+
+
+# §10.1 live voice-ID toggle by voice. TIGHTEN-ONLY on the engine: "turn on voice id" is
+# honoured; "turn off" is answered with where to do it (anyone in earshot could say it).
+_VOICE_ID = re.compile(
+    r"^(?:please\s+)?(?:(?:turn|switch)\s+(?P<on>on|off)\s+(?:the\s+)?(?:voice|speaker)\s+(?:id|identification|verification|check)|"
+    r"(?:turn|switch)\s+(?:the\s+)?(?:voice|speaker)\s+(?:id|identification|verification|check)\s+(?P<on2>on|off)|"
+    r"(?P<on3>enable|disable|activate|deactivate)\s+(?:the\s+)?(?:voice|speaker)\s+(?:id|identification|verification|check))$")
+
+
+def _voice_id_on(m) -> bool:
+    v = (m.group("on") or m.group("on2") or m.group("on3") or "").lower()
+    return v in ("on", "enable", "activate")
 
 
 # ---------------------------------------------------------------------------------

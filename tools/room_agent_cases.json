@@ -1,5 +1,5 @@
 {
-  "_doc": "room-voice §6.5 labelled set (vk-1819). class: implicit_relay|explicit_relay|lead_explicit|room_question|forbidden|misheard. expect.action is the required label; expect.actions lists acceptable alternatives; expect.to_contains must appear (case-insensitive) in the routed 'to'. stt:true cases are spoken by OmniVoice and transcribed by faster-whisper before routing, so misheard names come from the real STT. heldout:true cases were written AFTER the prompt was tuned and are never tuned on; the harness scores them on their own line.",
+  "_doc": "room-voice §6.5 labelled set (vk-1819). class: implicit_relay|explicit_relay|lead_explicit|room_question|forbidden|misheard. expect.action is the required label; expect.actions lists acceptable alternatives; expect.to_contains must appear (case-insensitive) in the routed 'to'. stt:true cases are spoken by OmniVoice and transcribed by faster-whisper before routing, so misheard names come from the real STT. heldout:true cases were written AFTER the prompt was tuned and are never tuned on; the harness scores them on their own line. class unverified: routed with the 'unverified' context (idInRoom off, unverified user lines in recent) and an empty sid; routing must match Eric's and no answer may ask who is speaking.",
   "context": {
     "user": {
       "name": "Eric"
@@ -886,6 +886,138 @@
       "expect": {
         "action": "answer"
       }
+    },
+    {
+      "id": "uv01",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "is anyone working right now",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "uv02",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "tell aurora the mockup needs a darker header",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      }
+    },
+    {
+      "id": "uv03",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "remove aurora from the room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "uv04",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "I'd like a dark mode on the room page",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "uv05",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "did the lead answer me yet",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "uv06",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "what did the lead say last",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "uv07",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "ask vrpc briefing table to rerun the windows tests",
+      "expect": {
+        "action": "relay",
+        "to_contains": "vrpc"
+      }
+    },
+    {
+      "id": "uv08",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "who is in the room",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "uv09",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "dissolve the room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "uv10",
+      "class": "unverified",
+      "context": "unverified",
+      "speaker": {
+        "sid": "",
+        "confidence": 0.1
+      },
+      "text": "the export is still missing timestamps",
+      "expect": {
+        "action": "lead"
+      }
     }
   ],
   "non_sequiturs": {
@@ -920,6 +1052,12 @@
       "what's waiting",
       "say that again",
       "ok so the lookup button should be blue"
+    ],
+    "ignore_unverified": [
+      "ok",
+      "thanks",
+      "got it",
+      "sounds good"
     ]
   },
   "intents": [
@@ -1054,5 +1192,234 @@
       "do you know who I am",
       "do you recognize my voice"
     ]
+  },
+  "contexts": {
+    "default": {
+      "user": {
+        "name": "Eric"
+      },
+      "room": {
+        "name": "Voice Interaction",
+        "mode": "open",
+        "lead": "briefing-table"
+      },
+      "seats": [
+        {
+          "handle": "briefing-table",
+          "spokenName": "briefing table",
+          "lead": true,
+          "state": "working",
+          "activity": "building E1",
+          "lastLineAgoS": 180
+        },
+        {
+          "handle": "vrpc-briefing-table",
+          "spokenName": "vrpc briefing table",
+          "lead": false,
+          "state": "idle",
+          "activity": "",
+          "lastLineAgoS": 1260
+        },
+        {
+          "handle": "aurora-design",
+          "spokenName": "aurora",
+          "lead": false,
+          "state": "idle",
+          "activity": "",
+          "lastLineAgoS": 3900
+        }
+      ],
+      "tools": [
+        {
+          "title": "Voice",
+          "kind": "voice",
+          "seat": null
+        },
+        {
+          "title": "Tasks",
+          "kind": "tasks",
+          "seat": "briefing-table"
+        }
+      ],
+      "connection": {
+        "device": "echo-dot-biscuit",
+        "since": 1790620000,
+        "muted": false,
+        "waiting": false
+      },
+      "recent": [
+        {
+          "id": 601,
+          "kind": "chat",
+          "author": "briefing-table",
+          "target": null,
+          "body": "E1 kind migration is in, running npm test now.",
+          "agoS": 1500
+        },
+        {
+          "id": 602,
+          "kind": "voice",
+          "author": "user",
+          "target": "briefing-table",
+          "body": "I'd like the lookup button blue",
+          "agoS": 1200
+        },
+        {
+          "id": 603,
+          "kind": "voice",
+          "author": "briefing-table",
+          "target": null,
+          "body": "Message received, working on the hat.",
+          "agoS": 1180
+        },
+        {
+          "id": 604,
+          "kind": "chat",
+          "author": "aurora-design",
+          "target": null,
+          "body": "Mockup v1 posted at 1440 and 390.",
+          "agoS": 3900
+        },
+        {
+          "id": 605,
+          "kind": "chat",
+          "author": "briefing-table",
+          "target": null,
+          "body": "Windows run is green.",
+          "agoS": 180
+        }
+      ],
+      "open": [
+        {
+          "vid": "v4k7",
+          "to": "briefing-table",
+          "agoS": 1200,
+          "delivered": "channel",
+          "ackAgoS": 1180,
+          "resultAgoS": null
+        }
+      ],
+      "lastSpoken": {
+        "vid": "v4k7",
+        "author": "briefing-table",
+        "body": "Message received, working on the hat.",
+        "agoS": 1180
+      }
+    },
+    "unverified": {
+      "user": {
+        "name": "Eric"
+      },
+      "room": {
+        "name": "Voice Interaction",
+        "mode": "open",
+        "lead": "briefing-table"
+      },
+      "seats": [
+        {
+          "handle": "briefing-table",
+          "spokenName": "briefing table",
+          "lead": true,
+          "state": "working",
+          "activity": "building E1",
+          "lastLineAgoS": 180
+        },
+        {
+          "handle": "vrpc-briefing-table",
+          "spokenName": "vrpc briefing table",
+          "lead": false,
+          "state": "idle",
+          "activity": "",
+          "lastLineAgoS": 1260
+        },
+        {
+          "handle": "aurora-design",
+          "spokenName": "aurora",
+          "lead": false,
+          "state": "idle",
+          "activity": "",
+          "lastLineAgoS": 3900
+        }
+      ],
+      "tools": [
+        {
+          "title": "Voice",
+          "kind": "voice",
+          "seat": null
+        },
+        {
+          "title": "Tasks",
+          "kind": "tasks",
+          "seat": "briefing-table"
+        }
+      ],
+      "connection": {
+        "device": "echo-dot-biscuit",
+        "since": 1790620000,
+        "muted": false,
+        "waiting": false,
+        "idInRoom": false
+      },
+      "recent": [
+        {
+          "id": 701,
+          "kind": "voice",
+          "author": "user",
+          "target": "briefing-table",
+          "body": "make the lookup button blue",
+          "agoS": 900,
+          "speakerVerified": false
+        },
+        {
+          "id": 702,
+          "kind": "voice",
+          "author": "briefing-table",
+          "target": null,
+          "body": "Message received; treating it with care, the voice was not verified.",
+          "agoS": 880
+        },
+        {
+          "id": 703,
+          "kind": "voice",
+          "author": "user",
+          "target": null,
+          "body": "is anyone here",
+          "agoS": 600,
+          "speakerVerified": false
+        },
+        {
+          "id": 704,
+          "kind": "voice",
+          "author": "voice",
+          "target": null,
+          "body": "Yes. briefing-table is working now.",
+          "agoS": 595
+        },
+        {
+          "id": 705,
+          "kind": "chat",
+          "author": "briefing-table",
+          "target": null,
+          "body": "Windows run is green.",
+          "agoS": 180
+        }
+      ],
+      "open": [
+        {
+          "vid": "v4k7",
+          "to": "briefing-table",
+          "agoS": 1200,
+          "delivered": "channel",
+          "ackAgoS": 1180,
+          "resultAgoS": null
+        }
+      ],
+      "lastSpoken": {
+        "vid": "v4k7",
+        "author": "briefing-table",
+        "body": "Message received, working on the hat.",
+        "agoS": 1180
+      }
+    }
   }
 }
