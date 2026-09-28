@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import difflib
 import re
 import threading
 import time
@@ -153,8 +154,13 @@ def render_context(ctx: dict) -> str:
     for s in seats:
         spoken = f" (spoken name: {s['spokenName']})" if s.get("spokenName") else ""
         lead = " [LEAD]" if s.get("lead") else ""
-        lines.append(f"  - {s.get('handle')}{spoken}{lead}: {s.get('state', '?')}, "
-                     f"{s.get('activity', '')}, last line {_ago(s.get('lastLineAgoS'))}")
+        # Plain words, measured (G 2026-09-28): with "parked, streaming" the 3B model called a
+        # working seat idle; with "working now" it answered correctly three times out of three.
+        act = (s.get("activity") or "").lower()
+        status = {"streaming": "working now", "working": "working now", "busy": "working now",
+                  "waiting": "waiting for you", "idle": "idle"}.get(act, act or "idle")
+        lines.append(f"  - {s.get('handle')}{spoken}{lead}: {status}, "
+                     f"last line {_ago(s.get('lastLineAgoS'))}")
     tools = ctx.get("tools") or []
     lines.append("Tools: " + (", ".join(f"{t.get('title')} ({t.get('kind')})" for t in tools) or "none"))
     open_ = ctx.get("open") or []
@@ -188,24 +194,144 @@ Pick exactly one action:
 
 "confidence" is your confidence in the action, 0 to 1. Reply with JSON only.
 
-Examples (from a DIFFERENT room with seats kade and mira; never reuse their names, numbers or words. Every "answer" you give must come from the ROOM SNAPSHOT below):
+Examples of the ACTION only (the answer text below is a placeholder; a real answer is one sentence built from the ROOM SNAPSHOT, never copied from here):
 "I'd like to add a hat to the character" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
 "tell mira the button should say help" -> {"action":"relay","to":"mira","answer":null,"confidence":0.95}
 "message the lead that the logo is too big" -> {"action":"lead","to":null,"answer":null,"confidence":0.95}
-"is anyone working right now" -> {"action":"answer","to":null,"answer":"Yes, kade is working; the last line was eleven minutes ago.","confidence":0.9}
+"is anyone working right now" -> {"action":"answer","to":null,"answer":"<one sentence from the snapshot>","confidence":0.9}
 "add the blender tool to the room" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
 "can we make the intro shorter" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
 "the export is missing the timestamps" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
-"what tools are in the room" -> {"action":"answer","to":null,"answer":"One tool: the Ledger panel.","confidence":0.9}
+"what tools are in the room" -> {"action":"answer","to":null,"answer":"<one sentence from the snapshot>","confidence":0.9}
 "remove mira from the room" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
-"did the lead answer me yet" -> {"action":"answer","to":null,"answer":"Not yet. Kade acknowledged it but there is no result.","confidence":0.85}
+"did the lead answer me yet" -> {"action":"answer","to":null,"answer":"<one sentence from the snapshot>","confidence":0.85}
 """
 
 # Words that only occur in the prompt's examples. An answer that contains one was copied
-# from the examples instead of read from the snapshot (measured against the E1 fixture:
-# "Yes, briefing-table is working; it posted 3 minutes ago." for a room with no such seat).
-_EXAMPLE_ONLY = ("kade", "mira", "eleven minutes", "ledger panel")
+# from the examples instead of read from the snapshot (measured live at G: the 3B model
+# returned the example sentence verbatim for "is anyone working right now").
+_EXAMPLE_ONLY = ("kade", "mira", "one sentence from the snapshot", "<", ">")
 _ANSWER_FALLBACK = "I can't tell that from the room right now."
+
+
+# ---------------------------------------------------------------------------------
+# Deterministic answers for the common room questions (G finding, 2026-09-28). The
+# snapshot has the facts; a 3B model misreads "parked" and copies examples. So the questions
+# Eric actually asks are answered from the snapshot in code, and the model only gets the
+# rest. Returns None when the question is not one of these.
+# ---------------------------------------------------------------------------------
+_Q_WHO_HERE = re.compile(r"\b(who(?:'s| is| are)?\s+(?:all\s+)?(?:in|on)\s+(?:the\s+)?(?:room|here|call)|who(?:'s| is)\s+here|who\s+do\s+we\s+have)\b")
+_Q_WORKING = re.compile(r"\b((?:is|are)\s+(?:anyone|anybody|someone|any\s+of\s+them|they|people)\s+(?:still\s+)?(?:working|busy|active|on\s+it)|who(?:'s| is)\s+(?:working|busy|active)|anyone\s+working|anybody\s+working)\b")
+_Q_LEAD = re.compile(r"\b(who(?:'s| is)\s+(?:the\s+)?(?:lead|leader|in\s+charge|running\s+(?:this|the)\s+room))\b")
+_Q_TOOLS = re.compile(r"\b((?:what|which)\s+(?:tools|apps|panels)|(?:any|are\s+there)\s+(?:tools|apps|panels))\b")
+_Q_ROOM = re.compile(r"\b((?:what|which)\s+room\s+(?:am\s+i|are\s+we|is\s+this)|where\s+am\s+i\s+connected|what\s+am\s+i\s+connected\s+to)\b")
+_Q_SEATS = re.compile(r"\bhow\s+many\s+(?:seats|people|agents|members)\b")
+_Q_ANSWERED = re.compile(r"\b(?:did|has|have)\s+(?P<who>.+?)\s+(?:answer|answered|reply|replied|respond|responded|acknowledge|acknowledged|ack|acked|get\s+back|pick(?:ed)?\s+(?:that|it)\s+up)\b")
+_Q_LAST_SAID = re.compile(r"\b(?:what(?:'s| is| was| did)\s+(?:the\s+)?(?:last\s+thing\s+)?(?P<who>.+?)\s+(?:say|said)(?:\s+last)?|last\s+thing\s+(?P<who2>.+?)\s+said)\b")
+_Q_HOW_LONG = re.compile(r"\bhow\s+long\s+(?:ago\s+)?(?:did|since|has)\s+(?P<who>.+?)\s+(?:post|posted|spoke|said|wrote|write|reply|replied)\b")
+_Q_MUTED = re.compile(r"\b(?:am\s+i|are\s+you|is\s+(?:the\s+)?(?:room|voice|agent))\s+muted\b")
+
+
+def _spoken(handle: str, lead: str | None = None) -> str:
+    if lead and handle == lead:
+        return "the lead"
+    return (handle or "").replace("-", " ").replace("_", " ")
+
+
+def _match_seat(who: str, ctx: dict):
+    """Fuzzy-map spoken words to a seat handle; 'the lead' -> the lead."""
+    who = _norm(who)
+    who = re.sub(r"^(?:the|our|my)\s+", "", who)
+    lead = (ctx.get("room") or {}).get("lead")
+    if who in ("lead", "leader", "team lead", "room lead", "boss") and lead:
+        return lead
+    best, score = None, 0.0
+    for s in ctx.get("seats") or []:
+        for cand in (s.get("handle") or "", s.get("spokenName") or ""):
+            if not cand:
+                continue
+            c = _norm(cand.replace("-", " "))
+            r = difflib.SequenceMatcher(None, who, c).ratio()
+            if who and (who in c or c in who):
+                r = max(r, 0.85)
+            if r > score:
+                best, score = s.get("handle"), r
+    return best if score >= 0.6 else None
+
+
+def _join(items: list) -> str:
+    items = [i for i in items if i]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def answer_room_question(text: str, ctx: dict) -> str | None:
+    t = _norm(text)
+    ctx = ctx or {}
+    room = ctx.get("room") or {}
+    lead = room.get("lead")
+    seats = ctx.get("seats") or []
+    if _Q_WHO_HERE.search(t):
+        if not seats:
+            return "No one is seated in the room right now."
+        names = [_spoken(s.get("handle"), lead) for s in seats]
+        return f"{len(seats)} seat{'s' if len(seats) != 1 else ''}: {_join(names)}."
+    if _Q_WORKING.search(t):
+        working = [s for s in seats if (s.get("activity") or "").lower() in ("streaming", "working", "busy")]
+        idle = [s for s in seats if s not in working]
+        if working:
+            line = f"Yes. {_join([_spoken(s.get('handle'), lead) for s in working])} {'is' if len(working) == 1 else 'are'} working"
+            if idle:
+                line += f"; {_join([_spoken(s.get('handle'), lead) for s in idle])} {'is' if len(idle) == 1 else 'are'} idle"
+            return line + "."
+        return "No one is working right now." + (f" {_join([_spoken(s.get('handle'), lead) for s in idle])} {'is' if len(idle) == 1 else 'are'} idle." if idle else "")
+    if _Q_LEAD.search(t):
+        return f"The lead is {(lead or 'not set').replace('-', ' ')}." if lead else "This room has no lead set."
+    if _Q_TOOLS.search(t):
+        tools = [tl.get("title") for tl in (ctx.get("tools") or []) if tl.get("title")]
+        return f"{len(tools)} tool{'s' if len(tools) != 1 else ''}: {_join(tools)}." if tools else "There are no tools in the room."
+    if _Q_ROOM.search(t):
+        return f"You're connected to {room.get('name') or 'the room'}."
+    if _Q_SEATS.search(t):
+        return f"{len(seats)} seat{'s' if len(seats) != 1 else ''}."
+    if _Q_MUTED.search(t):
+        return "Yes, I'm muted; replies go to the chat." if (ctx.get("connection") or {}).get("muted") else "No, I'm not muted."
+    m = _Q_HOW_LONG.search(t)
+    if m:
+        h = _match_seat(m.group("who"), ctx)
+        s = next((x for x in seats if x.get("handle") == h), None)
+        if s and s.get("lastLineAgoS") is not None:
+            return f"{_spoken(h, lead).capitalize()} last posted {_ago(s['lastLineAgoS'])}."
+        return "I don't see a post from them in the room."
+    m = _Q_ANSWERED.search(t)
+    if m:
+        h = _match_seat(m.group("who"), ctx) or lead
+        opens = [o for o in (ctx.get("open") or []) if o.get("to") == h]
+        ls = ctx.get("lastSpoken") or {}
+        if opens:
+            o = opens[-1]
+            if o.get("resultAgoS") is not None:
+                return f"Yes. {_spoken(h, lead).capitalize()} answered {_ago(o['resultAgoS'])}."
+            if o.get("ackAgoS") is not None:
+                return f"Not yet. {_spoken(h, lead).capitalize()} acknowledged it {_ago(o['ackAgoS'])} but hasn't answered."
+            return f"Not yet. Your message from {_ago(o.get('agoS'))} hasn't been picked up."
+        if ls.get("author") == h and ls.get("body"):
+            return f"The last thing from {_spoken(h, lead)} was {_ago(ls.get('agoS'))}: {ls['body']}"
+        return f"There's nothing open for {_spoken(h, lead)} right now."
+    m = _Q_LAST_SAID.search(t)
+    if m:
+        who = m.group("who") or m.group("who2") or ""
+        h = _match_seat(who, ctx)
+        if h:
+            lines = [r for r in (ctx.get("recent") or []) if r.get("author") == h]
+            if lines:
+                r = lines[-1]
+                return f"{_ago(r.get('agoS')).capitalize()}, {_spoken(h, lead)} said: {str(r.get('body', ''))[:240]}"
+            return f"I don't see a recent line from {_spoken(h, lead)}."
+    return None
 
 _LEAD_WORDS = {"lead", "the lead", "leader", "the leader", "team lead", "the team lead",
                "our lead", "my lead", "room lead", "the room lead"}

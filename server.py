@@ -2379,6 +2379,16 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     # and speaks a short ack. It never falls back to chat on failure (you asked for
     # the table; getting a chatbot instead would be maddening). Local intents above
     # (enrollment, "who am I") never reach here, so they never reach the engine.
+    # Whisper hallucinates a stock phrase ("Thank you.", "you", "Thanks for watching.") on a
+    # capture with no speech in it. With nobody recognisable in the audio either, that is a
+    # dead turn, not a sentence: answer 422 so the bridge plays its no-speech cue instead of
+    # a refusal or a chat reply (G, 2026-09-28: two of these in a row read as "I'm not sure
+    # that's you" and Eric thought his question had been refused).
+    if _looks_hallucinated(transcript) and spk_conf < HALLUCINATION_MAX_CONF:
+        print(f"[converse] dropped hallucinated fragment {transcript!r} spk={spk_conf:.2f} "
+              f"dev={device or '-'}", flush=True)
+        return JSONResponse({"error": "no_speech", "detail": "hallucinated fragment"},
+                            status_code=422)
     _dev_mode = (_voice_devices().get(device) or {}).get("mode") == "development"
     # --- ROOM VOICE (room-voice.md §4): "hey jarvis, connect to <room>" from chat mode.
     # Deterministic parse BEFORE the chat LLM, speaker-gated at the dev-turn floor so a
@@ -2887,6 +2897,22 @@ DEV_ACK_LINES = {
     "engine_down": "The table isn't answering.",
 }
 _CTRL_RE = re.compile("[" + "".join(chr(c) for c in range(0, 32)) + chr(127) + "]")
+
+# faster-whisper's stock outputs for silence / breath / speaker bleed. Only dropped when
+# speaker ID also saw nobody (conf below HALLUCINATION_MAX_CONF): a real "thank you" from
+# a recognised voice still goes through.
+_HALLUCINATIONS = {
+    "thank you", "thank you.", "thanks", "thanks.", "you", "you.", "thanks for watching",
+    "thanks for watching.", "thank you for watching", "thank you for watching.", "bye", "bye.",
+    "okay", "okay.", "ok", "ok.", "so", "so.", "um", "hmm", "mm", "oh", "oh.", "the", "a",
+    "subtitles by the amara.org community", "please subscribe", "question.", "question",
+}
+HALLUCINATION_MAX_CONF = 0.25
+
+
+def _looks_hallucinated(transcript: str) -> bool:
+    t = " ".join((transcript or "").lower().split())
+    return t in _HALLUCINATIONS or (len(t) <= 3 and not t.isdigit())
 _dev_ack_cache: dict = {}         # (voice, line) -> wav; acks repeat, synth once
 _dev_ack_lock = threading.Lock()
 

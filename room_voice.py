@@ -34,6 +34,7 @@ import urllib.request
 import room_agent
 
 CONNECT_MIN_CONF = 0.50          # §4: a guest cannot connect the Dot
+STICKY_MIN_CONF = 0.30           # sticky floor (server STICKY_THRESHOLD) for the connected speaker
 ROOM_PREFIX = "room:"
 
 
@@ -385,7 +386,12 @@ class RoomVoice:
         room_id = ch[len(ROOM_PREFIX):] if ch.startswith(ROOM_PREFIX) else None
         if not room_id:
             return TurnResult(_fmt("not_connected"), "not_connected")
-        if not sid or conf < CONNECT_MIN_CONF:
+        # Speaker gate: the dev-turn floor, OR a sticky match on the speaker who opened this
+        # connection (short questions on the Dot mic land at 0.3-0.5 for the same voice that
+        # scored 0.75 on the connect line; the sticky session already vouches for them).
+        sticky_ok = (match == "sticky" and sid and sid == st.get("speaker")
+                     and conf >= STICKY_MIN_CONF)
+        if not sid or (conf < CONNECT_MIN_CONF and not sticky_ok):
             return TurnResult(_fmt("refused_speaker"), "refused_speaker")
 
         # 1. deterministic intents
@@ -408,7 +414,14 @@ class RoomVoice:
         if status != 200:
             ctx = {"room": {"name": st.get("name"), "lead": st.get("lead")},
                    "connection": {"device": device, "muted": st.get("muted"), "waiting": st.get("waiting")}}
-        dec = room_agent.route(transcript, ctx, history=self.memory.as_history(room_id, sid))
+        # Common room questions are answered from the snapshot in code (G finding: the 3B
+        # model copied an example and misread "parked"); the model gets everything else.
+        det = room_agent.answer_room_question(transcript, ctx) if status == 200 else None
+        if det:
+            dec = {"action": "answer", "to": None, "answer": det, "confidence": 1.0,
+                   "raw": None, "note": "deterministic"}
+        else:
+            dec = room_agent.route(transcript, ctx, history=self.memory.as_history(room_id, sid))
         action = dec["action"]
         if action == "answer":
             answer = dec["answer"] or ""
@@ -419,7 +432,8 @@ class RoomVoice:
             self._push_exchange(device, {"kind": "in", "who": "user", "text": transcript, "vid": None})
             self._push_exchange(device, {"kind": "out", "who": "voice", "text": answer, "vid": None})
             # §4: the open-mic window follows a voice-agent answer too.
-            return TurnResult(answer, "answered", expects_reply=True, confidence=dec["confidence"])
+            return TurnResult(answer, "answered", expects_reply=True, confidence=dec["confidence"],
+                              router=dec.get("raw"), note=dec.get("note"))
 
         route = {"to": dec["to"] if action == "relay" else "lead", "confidence": dec["confidence"]}
         if dec.get("note"):
