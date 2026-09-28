@@ -1446,6 +1446,26 @@ def get_personalities():
     }
 
 
+@app.get("/api/voice/characters")
+def voice_characters(request: Request):
+    """Room-voice §10.1: the character catalogue for a room's voice setting, proxied by the
+    engine for Room settings (GET {engine}/api/voice/characters -> here). Bearer like every
+    /api/voice/* route. A plain list of {id, name, description}; `id` is the opaque value
+    the engine stores in settings.voice.character and sends back on deliver as `character`."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    out = []
+    for c in CHARACTERS:
+        name = c.get("name") or c.get("label") or c.get("id")
+        desc = c.get("title") or ""
+        if not desc:
+            style = (c.get("style") or "").strip()
+            desc = style.split(".")[0][:120] if style else f"voice {c.get('voice', '')}"
+        out.append({"id": c["id"], "name": name, "description": desc})
+    return out
+
+
 @app.get("/api/characters")
 def get_characters():
     """Character bundles: each pairs a voice id + personality id (+ default strength)."""
