@@ -148,6 +148,47 @@ button {
   cursor: default;
 }
 
+/* §10.1 idInRoom toggle -- same size/state rules as .mute (idle dim, on/
+   pressed text+surface3), separate class since it's a distinct control. */
+.idbtn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border2);
+  border-radius: var(--corner);
+  color: var(--dim);
+  flex: none;
+}
+
+.idbtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.idbtn:hover {
+  color: var(--text);
+  background: var(--cap-hover);
+}
+
+/* on (aria-pressed=true) is a chosen state, not a warning -- dim -> text,
+   never amber/coral -- same rule as .mute[aria-pressed="true"]. */
+.idbtn[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--surface3);
+}
+
+.idbtn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 .disc {
   font-size: 12px;
   color: var(--teal);
@@ -160,6 +201,7 @@ button {
 }
 
 .mute:focus-visible,
+.idbtn:focus-visible,
 .disc:focus-visible,
 .ex:focus-visible {
   outline: 2px solid var(--teal);
@@ -168,7 +210,8 @@ button {
 
 /* Touch, not iframe width -- the iframe is narrow on desktop too. */
 @media (pointer: coarse) {
-  .mute {
+  .mute,
+  .idbtn {
     width: 40px;
     height: 40px;
   }

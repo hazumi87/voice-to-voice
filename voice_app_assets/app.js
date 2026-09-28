@@ -12,7 +12,7 @@
 // the closed vocabulary this frame ever sends is:
 //   {panel:"status", speaking}
 //   {panel:"height", px}
-//   {panel:"voice", action:"mute"|"unmute"|"disconnect"}
+//   {panel:"voice", action:"mute"|"unmute"|"disconnect"|"id-on"|"id-off"}
 //   {panel:"line", lineId}
 (function () {
   "use strict";
@@ -25,6 +25,7 @@
   var devEl = document.getElementById("dev");
   var exchangesEl = document.getElementById("exchanges");
   var muteBtn = document.getElementById("muteBtn");
+  var idBtn = document.getElementById("idBtn");
   var disconnectBtn = document.getElementById("disconnectBtn");
 
   var lastHeight = -1;
@@ -38,6 +39,13 @@
     '<path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>';
   var MIC_OFF = '<path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3">' +
     '</path><path d="M5 11a7 7 0 0 0 11.7 5.2M19 11a7 7 0 0 1-.4 2.3M12 18v3M3 3l18 18"></path>';
+
+  // §10.1 idInRoom toggle glyph -- a small id-badge/shield outline. Off
+  // (idInRoom false) draws the same outline plus a diagonal slash; the
+  // color split (--dim idle / --text pressed) is handled entirely by CSS
+  // (.idbtn / .idbtn[aria-pressed="true"]), not here.
+  var ID_BADGE = '<path d="M12 3l6 2.4v4.3c0 4.6-2.6 7.9-6 9.3-3.4-1.4-6-4.7-6-9.3V5.4z"></path>';
+  var ID_SLASH = '<path d="M4 4l16 16"></path>';
 
   function post(msg) {
     window.__posted.push(msg);
@@ -224,6 +232,17 @@
     disconnectBtn.disabled = !connected;
   }
 
+  // §10.1 security toggle idInRoom. Same rule as Mute: shows only the last
+  // fetched value, never an optimistic guess ahead of the click.
+  function renderId(idInRoom, connected) {
+    idBtn.setAttribute("aria-pressed", idInRoom ? "true" : "false");
+    idBtn.setAttribute("aria-label", idInRoom ? "Voice ID on" : "Voice ID off");
+    idBtn.title = idInRoom ? "Voice ID on" : "Voice ID off";
+    idBtn.innerHTML = '<svg viewBox="0 0 24 24">' + ID_BADGE +
+      (idInRoom ? "" : ID_SLASH) + '</svg>';
+    idBtn.disabled = !connected;
+  }
+
   // The CONTENT height (the .fr root -- never the document): .exs's own
   // max-height/overflow-y already keeps the frame's natural layout height
   // at or under the host's 320 clamp with .fr-top always visible; this is
@@ -252,6 +271,7 @@
     renderSpeaking(speaking);
     renderDev(data.device, data.since, connected);
     renderMute(!!data.muted, connected);
+    renderId(data.idInRoom !== false, connected);
     renderExchanges(data.exchanges, !!data.waiting);
     postHeight();
     if (forcePost || speaking !== lastPostedSpeaking) {
@@ -266,6 +286,14 @@
     }
     var muted = muteBtn.getAttribute("aria-pressed") === "true";
     post({ panel: "voice", action: muted ? "unmute" : "mute" });
+  });
+
+  idBtn.addEventListener("click", function () {
+    if (idBtn.disabled) {
+      return;
+    }
+    var on = idBtn.getAttribute("aria-pressed") === "true";
+    post({ panel: "voice", action: on ? "id-off" : "id-on" });
   });
 
   disconnectBtn.addEventListener("click", function () {
@@ -327,6 +355,7 @@
           speaking: !!data.speaking,
           muted: data.muted,
           connected: data.connected,
+          idInRoom: data.idInRoom,
           waiting: data.waiting,
           device: data.device,
           since: data.since,
