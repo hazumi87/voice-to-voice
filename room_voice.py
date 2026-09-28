@@ -302,10 +302,11 @@ class RoomVoice:
 
     # -- connect -----------------------------------------------------------------
     def connect_turn(self, device: str, target: str, speaker: str, sid: str, conf: float) -> TurnResult:
-        if not sid or conf < CONNECT_MIN_CONF:
-            return TurnResult(_fmt("refused_speaker"), "refused_speaker")
+        identified = bool(sid) and conf >= CONNECT_MIN_CONF
         status, body = self.engine.connections()
         if status != 200:
+            if not identified:
+                return TurnResult(_fmt("refused_speaker"), "refused_speaker")
             return TurnResult(_fmt("engine_down"), "engine_down", status=status)
         conns = body.get("connections") or []
         if not conns:
@@ -318,7 +319,11 @@ class RoomVoice:
             opts = " or ".join(names) if len(names) == 2 else ", ".join(names[:-1]) + ", or " + names[-1]
             return TurnResult(_fmt("ambiguous", options=opts), "ambiguous", options=names)
         conn = res["match"]
-        return self._open(device, conn["channelId"], conn.get("name") or "the room", sid)
+        # §10.1 security toggle idOnConnect (default true): the room decides whether an
+        # unidentified voice may connect it. Carried on each connections entry.
+        if conn.get("idOnConnect", True) is not False and not identified:
+            return TurnResult(_fmt("refused_speaker"), "refused_speaker")
+        return self._open(device, conn["channelId"], conn.get("name") or "the room", sid or "")
 
     def _open(self, device: str, channel_id: str, name: str, sid: str) -> TurnResult:
         prev = self.state.get(device)
@@ -394,7 +399,10 @@ class RoomVoice:
         # session vouches for a voice, that same sid is accepted down to the sticky floor
         # whether speaker ID called it a full or a sticky match.
         session_ok = bool(sid) and sid == st.get("speaker") and conf >= STICKY_MIN_CONF
-        if not sid or (conf < CONNECT_MIN_CONF and not session_ok):
+        # §10.1 security toggle idInRoom (default true): off = no speaker floor on room turns
+        # for this room (the engine stamps meta.speakerVerified on the line either way).
+        id_in_room = (st.get("settings") or {}).get("idInRoom", True) is not False
+        if id_in_room and (not sid or (conf < CONNECT_MIN_CONF and not session_ok)):
             return TurnResult(_fmt("refused_speaker"), "refused_speaker")
 
         # 1. deterministic intents

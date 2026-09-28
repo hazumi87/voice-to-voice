@@ -29,9 +29,9 @@ STATE = {
                    {"handle": "vrpc-briefing-table", "spokenName": "vrpc briefing table", "lead": False, "state": "idle", "activity": "", "lastLineAgoS": 1200},
                    {"handle": "aurora-design", "spokenName": "aurora", "lead": False, "state": "idle", "activity": "", "lastLineAgoS": 3900}],
                "tools": [{"title": "Tasks", "kind": "tasks", "seat": "briefing-table"}],
-               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30}}},
+               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": True, "idInRoom": True, "idleDisconnect": True}}},
         "r2": {"name": "Workrooms build", "lead": "briefing-table", "aliases": ["workrooms"], "seats": [], "tools": [],
-               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30}}},
+               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": False, "idInRoom": False, "idleDisconnect": False}}},
     },
     "channels": {},      # channelId -> {device, muted, waiting, openedAt}
     "lines": {},         # roomId -> [line]
@@ -97,6 +97,7 @@ class H(BaseHTTPRequestHandler):
                 for rid, r in STATE["rooms"].items():
                     ch = STATE["channels"].get("room:" + rid)
                     conns.append({"channelId": "room:" + rid, "name": r["name"], "aliases": r["aliases"],
+                                  "idOnConnect": r["settings"]["voice"].get("idOnConnect", True),
                                   "kind": "room", "state": "open", "lead": r["lead"], "seats": len(r["seats"]),
                                   "connected": {"device": ch["device"], "since": ch["openedAt"]} if ch else None})
             return self._json(200, {"provider": "briefing-table", "connections": conns})

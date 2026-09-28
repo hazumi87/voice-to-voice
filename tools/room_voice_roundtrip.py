@@ -137,6 +137,18 @@ def main():
         r = rv.connect_turn(dev, "voice interaction", "Eric", sid, 0.9)
         check("reconnect remembers r1", r.outcome == "connected" and "remember" in r.say.lower(), r.say)
 
+        print("security toggles (§10.1): r2 has idOnConnect=false, idInRoom=false")
+        r = rv.connect_turn(dev, "voice interaction", "Guest", "", 0.2)
+        check("guest still refused on r1 (idOnConnect true)", r.outcome == "refused_speaker", r.outcome)
+        r = rv.connect_turn(dev, "workrooms", "Guest", "", 0.2)
+        check("guest may connect r2 (idOnConnect false)", r.outcome == "connected", f"{r.outcome} {r.say!r}")
+        r = rv.room_turn(dev, "tell the lead hello from a guest", "Guest", "", 0.2, "full", "u20")
+        check("guest room turn not refused on r2 (idInRoom false)", r.outcome == "sent", f"{r.outcome} {r.say!r}")
+        r = rv.room_turn(dev, "disconnect", "Guest", "", 0.2, "full", "u21")
+        check("guest disconnect", r.outcome == "disconnected")
+        r = rv.connect_turn(dev, "voice interaction", "Eric", sid, 0.9)
+        check("eric back on r1", r.outcome == "connected")
+
         print("stale mode self-heal")
         urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/_reset", data=b"{}", method="POST"), timeout=5)
         r = rv.room_turn(dev, "tell aurora hello", "Eric", sid, 0.9, "full", "u14")
