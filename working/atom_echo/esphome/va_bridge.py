@@ -181,6 +181,10 @@ def pcm_to_wav(pcm: bytes, rate: int = MIC_RATE) -> bytes:
 
 class VoiceBridge:
     def __init__(self, client: APIClient, dev: dict, cfg: dict):
+        # room-voice follow-up tracking: set by announce(start_conversation=True), consumed
+        # by the next handle_start, sent to v2v with that run's capture.
+        self._next_run_followup = None
+        self._run_followup = None
         self.client = client
         self.dev_id = dev["id"]
         self.reply_gain = float(dev.get("reply_gain", 1.0))
@@ -258,14 +262,18 @@ class VoiceBridge:
         return self._run_active or self._loop.time() < self._busy_until
 
     async def announce(self, wav: bytes, start_conversation: bool = False,
-                       timeout: float = 30.0) -> dict:
+                       timeout: float = 30.0, busy_wait: float = None,
+                       reply_id: str = None) -> dict:
         """Push a WAV to the device via the announce path and report TRUTHFULLY:
         {delivered:true, played_ms} only after playback finished; otherwise
         {delivered:false, error}. Waits (up to `timeout`) for any capture/playback in
         progress to end first; never interrupts the user. Serialized per device."""
+        # room-voice §7: a reply waits up to `busy_wait` s for a capture to end (8 s from
+        # v2v); an ifIdle notice passes busy_wait=0 and is refused at once if we are busy.
+        wait_cap = timeout if busy_wait is None else max(0.0, float(busy_wait))
         t_wait0 = self._loop.time()
         while self.busy():
-            if self._loop.time() - t_wait0 > timeout:
+            if self._loop.time() - t_wait0 >= wait_cap:
                 return {"delivered": False, "error": "device_busy"}
             await asyncio.sleep(0.1)
         async with self._announce_lock:
@@ -277,6 +285,10 @@ class VoiceBridge:
                 # The reply asked a question: the mic re-opens right after playback,
                 # so arm the echo-settle guard exactly as the enrollment followup does.
                 self._next_run_guard = FOLLOWUP_GUARD_S
+                # room-voice: the capture that follows is an open-mic follow-up TO THIS
+                # reply; v2v gets followup=1 + followup_to so it can filter non-sequiturs
+                # and the engine can clear "waiting" (blueprint addendum: followupTo).
+                self._next_run_followup = reply_id or ""
             t0 = self._loop.time()
             try:
                 await self.client.send_voice_assistant_announcement_await_response(
@@ -285,6 +297,7 @@ class VoiceBridge:
             except Exception as e:  # noqa: BLE001
                 self._log(f"[announce] FAILED ({e!r})")
                 self._next_run_guard = 0.0
+                self._next_run_followup = None
                 return {"delivered": False, "error": "playback_failed", "detail": repr(e)}
             played_ms = int((self._loop.time() - t0) * 1000)
             self._log(f"[announce] played {len(wav)}B in {played_ms}ms "
@@ -311,6 +324,8 @@ class VoiceBridge:
             self._log(f"[guard] dropping first {self._next_run_guard:.1f}s "
                       f"(echo-settle after followup)")
         self._next_run_guard = 0.0
+        self._run_followup = getattr(self, "_next_run_followup", None)
+        self._next_run_followup = None
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_START, {})
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_START, {})
         if self.listen_cue and _CUE_LISTEN:
@@ -506,10 +521,14 @@ class VoiceBridge:
             filler_task = asyncio.create_task(self._play_filler())
 
         def _post():
+            data = {"device": self.dev_id}      # A6: device id on every request
+            if self._run_followup is not None:
+                data["followup"] = "1"           # this capture came from start_conversation
+                data["followup_to"] = self._run_followup
             return requests.post(
                 self.converse_url,
                 files={"audio": ("utterance.wav", wav, "audio/wav")},
-                data={"device": self.dev_id},   # A6: device id on every request
+                data=data,
                 timeout=120,
             )
         try:
@@ -573,6 +592,7 @@ class VoiceBridge:
             # Arm the echo-settle guard for the capture run the device is about to start,
             # so the loud reply we're about to play doesn't self-trigger that run's mic.
             self._next_run_guard = FOLLOWUP_GUARD_S
+            self._next_run_followup = ""
             try:
                 await self.client.send_voice_assistant_announcement_await_response(
                     media_id=self.reply_url, timeout=20.0, start_conversation=True)
@@ -630,7 +650,15 @@ async def announce_for(request: web.Request) -> web.Response:
         timeout = min(max(float(request.query.get("timeout", "30")), 1.0), 60.0)
     except ValueError:
         timeout = 30.0
-    res = await bridge.announce(wav, start_conversation=sc, timeout=timeout)
+    busy_wait = None
+    if "busy_wait" in request.query:
+        try:
+            busy_wait = min(max(float(request.query.get("busy_wait")), 0.0), 60.0)
+        except ValueError:
+            busy_wait = None
+    reply_id = request.query.get("reply_id") or None
+    res = await bridge.announce(wav, start_conversation=sc, timeout=timeout,
+                                busy_wait=busy_wait, reply_id=reply_id)
     status = 200 if res.get("delivered") else (409 if res.get("error") == "device_busy" else 502)
     res["device"] = dev_id
     return web.json_response(res, status=status)

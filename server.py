@@ -2255,7 +2255,9 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
              personality: str = Form(DEFAULT_PERSONALITY),
              speed: float = Form(1.0), guidance: float = Form(2.0),
              temperature: float = Form(0.0), steps: int = Form(16),
-             device: str = Form("")):
+             device: str = Form(""), followup: int = Form(0), followup_to: str = Form("")):
+    # `followup`/`followup_to`: room-voice — the bridge marks a capture that came from a
+    # start_conversation re-open (open-mic window) and names the replyId it followed.
     # `device`: originating endpoint id (va_bridge sends it on every request per the
     # home-automation contract, 2026-09-20). Keys the sticky recognition session
     # below; fuller per-device state moves to the NUC state server later.
@@ -2357,7 +2359,22 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     # and speaks a short ack. It never falls back to chat on failure (you asked for
     # the table; getting a chatbot instead would be maddening). Local intents above
     # (enrollment, "who am I") never reach here, so they never reach the engine.
-    if (_voice_devices().get(device) or {}).get("mode") == "development":
+    _dev_mode = (_voice_devices().get(device) or {}).get("mode") == "development"
+    # --- ROOM VOICE (room-voice.md §4): "hey jarvis, connect to <room>" from chat mode.
+    # Deterministic parse BEFORE the chat LLM, speaker-gated at the dev-turn floor so a
+    # guest cannot connect the Dot to a room. In development mode the same intent is a
+    # hop and is handled inside the room turn.
+    if not _dev_mode and spk_id and spk_conf >= DEV_TURN_MIN_CONF:
+        _it = room_agent.parse_intent(transcript)
+        if _it and _it["intent"] == "connect":
+            res = _room.connect_turn(device, _it.get("target") or "", spk_name, spk_id, spk_conf)
+            return _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf,
+                                        spk_detail, voice, t0, t_stt, "connect")
+    if _dev_mode:
+        if _room_state.room_id(device):
+            return _room_turn_response(transcript, device, spk_id, spk_name, spk_conf,
+                                       spk_detail, voice, t0, t_stt,
+                                       bool(followup), (followup_to or "").strip() or None)
         return _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail,
                          voice, t0, t_stt)
 
@@ -2552,14 +2569,23 @@ def _bridge_base(dev: dict) -> str:
     return u.split("/announce/", 1)[0]
 
 
-def _push_to_device(dev: dict, wav: bytes, start_conversation: bool, timeout: float):
+def _push_to_device(dev: dict, wav: bytes, start_conversation: bool, timeout: float,
+                    busy_wait: float = None, reply_id: str = None):
     """Hand a WAV to the device's adapter. Only the Dot bridge adapter exists in P1.
-    Returns (http_status, body) with body always carrying delivered + error."""
+    Returns (http_status, body) with body always carrying delivered + error.
+    busy_wait: seconds the bridge may wait for a capture to end (room-voice §7: 8 s for
+    a reply, 0 for an ifIdle notice); None = the bridge's own default (= timeout).
+    reply_id: handed to the bridge so the open-mic capture that follows a
+    start_conversation reply can name it (followup_to)."""
     if dev.get("adapter", "bridge") != "bridge":
         return 502, {"delivered": False, "error": "adapter_unsupported",
                      "adapter": dev.get("adapter")}
     url = (f"{dev['announce_url']}?start_conversation={1 if start_conversation else 0}"
            f"&timeout={int(timeout)}")
+    if busy_wait is not None:
+        url += f"&busy_wait={float(busy_wait):g}"
+    if reply_id:
+        url += "&reply_id=" + urllib.parse.quote(str(reply_id))
     headers = {"Content-Type": "audio/wav"}
     if dev.get("announce_token"):
         headers["X-Announce-Token"] = dev["announce_token"]
@@ -2650,8 +2676,20 @@ def _voice_deliver_core(payload: dict, who: str):
         return 400, {"delivered": False, "error": "bad_request", "field": "device"}
     if not text:
         return 400, {"delivered": False, "error": "bad_request", "field": "text"}
-    if len(text) > VOICE_TEXT_MAX:
-        return 413, {"delivered": False, "error": "too_long", "max": VOICE_TEXT_MAX,
+    kind = str(payload.get("kind") or "").strip().lower() or None
+    if kind not in (None, "ack", "result", "question", "info", "notice"):
+        kind = "info"
+    over_cap = str(payload.get("overCap") or "").strip().lower() or None
+    if_idle = bool(payload.get("ifIdle", False))
+    try:
+        max_words = int(payload.get("maxWords") or 0)
+    except (TypeError, ValueError):
+        max_words = 0
+    # room-voice §7: an over-cap reply arrives whole (up to 2000 chars) and is spoken as a
+    # summary of at most maxWords; everything else keeps the 500-char 413.
+    text_cap = VOICE_TEXT_SUMMARIZE_MAX if over_cap == "summarize" else VOICE_TEXT_MAX
+    if len(text) > text_cap:
+        return 413, {"delivered": False, "error": "too_long", "max": text_cap,
                              "len": len(text)}
 
     # Idempotency: the same replyId never plays twice; it gets the first outcome back.
@@ -2690,6 +2728,17 @@ def _voice_deliver_core(payload: dict, who: str):
 
     sid = str(payload.get("sid") or "").strip()
     expects_reply = bool(payload.get("expectsReply", False))
+    if kind in ("ack", "info", "notice"):
+        expects_reply = False          # §7: the mic re-opens only after result/question
+    _rst = _room_state.get(device)
+    if _rst.get("channelId") and _rst.get("muted") and \
+            (not payload.get("channelId") or payload.get("channelId") == _rst.get("channelId")):
+        _voice_journal({"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+                        "device": device, "mode": "development", "event": "deliver_muted",
+                        "kind": kind, "name": payload.get("name"), "replyId": reply_id or None,
+                        "text": text})
+        return 200, {"delivered": False, "reason": "muted", "device": device,
+                     "replyId": reply_id or None, "kind": kind}
     para = str(payload.get("paraphrase") or "off").strip().lower()
     if para not in ("off", "subtle", "full"):
         para = "off"
@@ -2717,6 +2766,11 @@ def _voice_deliver_core(payload: dict, who: str):
     sp, gd, tp, st = clamp_tuning(float(tn.get("speed", 1.0)), float(tn.get("guidance", 2.0)),
                                   float(tn.get("temperature", 0.0)), int(tn.get("steps", 16)))
     spoken = text
+    if over_cap == "summarize":
+        spoken = _summarize_for_voice(text, max_words or 40)
+    _rname = str(payload.get("name") or "").strip()
+    if _rst.get("channelId") and _rname and _rname != "voice" and kind in ("ack", "result", "question", "info"):
+        spoken = _relay_prefix(_rname, _rst.get("lead")) + spoken
     if para != "off" and style:
         try:
             if para == "subtle":
@@ -2751,21 +2805,31 @@ def _voice_deliver_core(payload: dict, who: str):
     # One delivery at a time per device (the bridge also serializes; this keeps our
     # own workers from piling up behind a slow playback).
     lock = _voice_dev_lock(device)
-    if not lock.acquire(timeout=VOICE_DELIVER_TIMEOUT_S):
+    _busy_wait = 0.0 if if_idle else VOICE_BUSY_WAIT_S
+    if not lock.acquire(timeout=(0.5 if if_idle else VOICE_DELIVER_TIMEOUT_S)):
         status, body = 409, {"delivered": False, "error": "device_busy",
                              "detail": "another delivery is in progress"}
     else:
         try:
-            status, body = _push_to_device(dev, wav, expects_reply, VOICE_DELIVER_TIMEOUT_S)
+            status, body = _push_to_device(dev, wav, expects_reply, VOICE_DELIVER_TIMEOUT_S,
+                                           busy_wait=_busy_wait, reply_id=reply_id or None)
         finally:
             lock.release()
-    if not body.get("delivered"):
+    if if_idle and body.get("error") == "device_busy":
+        # §7: a notice never talks over a capture; not an error, just not now.
+        body = {"delivered": False, "reason": "busy", "ifIdle": True}
+        status = 200
+    elif not body.get("delivered"):
         status = _VOICE_ERR_STATUS.get(body.get("error", ""), status if status >= 400 else 502)
+    if body.get("delivered"):
+        _room.note_spoken(device, _rname or None, spoken, reply_id or None,
+                          vid=payload.get("inReplyTo"))
     t_done = time.time()
     body.update({
         "device": device, "replyId": reply_id or None,
         "inReplyTo": payload.get("inReplyTo"), "channelId": payload.get("channelId"),
         "spoken": spoken, "voice": voice, "paraphrase": para, "expectsReply": expects_reply,
+        "kind": kind, "overCap": over_cap, "maxWords": max_words or None, "ifIdle": if_idle,
         "caller": who,
         "timing": {"synth_ms": int((t_synth - t0) * 1000),
                    "deliver_ms": int((t_done - t_synth) * 1000),
@@ -2947,6 +3011,31 @@ def _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
     return Response(content=wav, media_type="audio/wav", headers=headers)
 
 
+_voice_devices_write_lock = threading.Lock()
+
+
+def _set_device_mode(device: str, mode: str, by: str = "server") -> str:
+    """Persist a device's mode (chat|development) in voice_devices.json. Returns the
+    previous mode. Raises KeyError for an unknown device."""
+    with _voice_devices_write_lock:
+        with open(VOICE_DEVICES_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        dev = (data.get("devices") or {}).get(device)
+        if not dev:
+            raise KeyError(device)
+        prev = dev.get("mode", "chat")
+        if prev == mode:
+            return prev
+        dev["mode"] = mode
+        tmp = VOICE_DEVICES_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, VOICE_DEVICES_PATH)
+    print(f"[voice] device {device} mode {prev} -> {mode} (by {by})", flush=True)
+    return prev
+
+
 @app.post("/api/voice/devices/{device}/mode")
 def voice_device_mode(device: str, request: Request, payload: dict = Body(...)):
     """Dev-panel toggle: set a device's mode (chat|development). Persists to
@@ -2958,20 +3047,225 @@ def voice_device_mode(device: str, request: Request, payload: dict = Body(...)):
     if mode not in ("chat", "development"):
         return JSONResponse({"error": "bad_request", "field": "mode",
                              "allowed": ["chat", "development"]}, status_code=400)
-    with open(VOICE_DEVICES_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    dev = (data.get("devices") or {}).get(device)
-    if not dev:
+    try:
+        prev = _set_device_mode(device, mode, by=who)
+    except KeyError:
         return JSONResponse({"error": "device_unknown", "device": device}, status_code=404)
-    prev = dev.get("mode", "chat")
-    dev["mode"] = mode
-    tmp = VOICE_DEVICES_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-    os.replace(tmp, VOICE_DEVICES_PATH)
-    print(f"[voice] device {device} mode {prev} -> {mode} (by {who})", flush=True)
     return {"device": device, "mode": mode, "previous": prev}
+
+
+# ---------------------------------------------------------------------------
+# ROOM VOICE — the Dot in a workroom (briefing-table docs/room-voice.md, vk-1825).
+# Logic lives in room_agent.py (router, intents, memory) and room_voice.py (engine
+# client, connection state, the turn). This section is the HTTP/synth glue only.
+# ---------------------------------------------------------------------------
+import room_agent
+import room_voice
+
+ROOM_VOICE_STATE_PATH = os.path.join(HERE, "working", "room_voice_state.json")
+ROOM_MEMORY_PATH = os.path.join(HERE, "working", "room_memory.json")
+VOICE_TEXT_SUMMARIZE_MAX = 2000   # chars accepted with overCap:"summarize" (§7)
+VOICE_BUSY_WAIT_S = 8.0           # §7: a reply waits this long for a capture to end
+
+
+def _set_device_mode_quiet(device: str, mode: str) -> None:
+    try:
+        _set_device_mode(device, mode, by="room-voice")
+    except KeyError:
+        print(f"[room] cannot set mode on unknown device {device!r}", flush=True)
+
+
+_room_engine = room_voice.EngineClient(_engine_cfg, _engine_token)
+_room_state = room_voice.RoomVoiceState(ROOM_VOICE_STATE_PATH)
+_room_memory = room_agent.RoomMemory(ROOM_MEMORY_PATH)
+_room = room_voice.RoomVoice(_room_engine, _room_state, _room_memory, _set_device_mode_quiet)
+
+
+def _silence_wav(ms: int = 120) -> bytes:
+    y = np.zeros(int(TTS_SR * ms / 1000), dtype=np.float32)
+    buf = io.BytesIO()
+    sf.write(buf, y, TTS_SR, format="WAV")
+    return buf.getvalue()
+
+
+def _relay_prefix(name: str, lead: str | None) -> str:
+    if lead and name == lead:
+        return "The lead says: "
+    return name.replace("-", " ").replace("_", " ") + " says: "
+
+
+def _summarize_for_voice(text: str, max_words: int) -> str:
+    """§7 over-cap tier: one spoken summary of at most max_words, then the chat pointer."""
+    system = (f"Rewrite the message below as ONE short spoken summary of at most {max_words} "
+              "words. Plain speech for a smart speaker: no markdown, no lists, no URLs, no code. "
+              "Keep names, numbers and decisions. Output only the summary sentence.")
+    try:
+        out = _ollama_chat([{"role": "system", "content": system},
+                            {"role": "user", "content": text}], num_predict=120, temperature=0.2)
+    except Exception as e:  # noqa: BLE001 — never block delivery on the summariser
+        print(f"[room] summarize failed ({e!r}); truncating", flush=True)
+        out = text
+    out = _strip_stage_directions(out) or text
+    words = out.split()
+    if len(words) > max_words:
+        out = " ".join(words[:max_words]).rstrip(",;:") + "."
+    return out.rstrip() + " Details are in the chat."
+
+
+def _room_voice_for(device: str, fallback_voice: str):
+    """The room's character voice (settings.voice.character) if set, else the speaker's."""
+    st = _room_state.get(device)
+    char = ((st.get("settings") or {}).get("character") or "") if st else ""
+    if char:
+        ch = find_character(str(char))
+        if ch is not None:
+            v, _ = _resolve_speaker_voice(f"char:{ch['id']}")
+            if v:
+                return v, (ch.get("tuning") or {})
+    return fallback_voice or DEFAULT_VOICE, {}
+
+
+def _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf, spk_detail,
+                         voice, t0, t_stt, route_label):
+    """Speak a TurnResult on the Dot path (WAV + the same X-headers the dev turn uses)."""
+    t_eng = time.time()
+    rvoice, tn = _room_voice_for(device, voice)
+    if res.say:
+        sp, gd, tp, st = clamp_tuning(float(tn.get("speed", 1.0)), float(tn.get("guidance", 2.0)),
+                                      float(tn.get("temperature", 0.0)), int(tn.get("steps", 16)))
+        if res.outcome in ("sent", "connected", "reconnected", "disconnected", "muted", "unmuted",
+                           "not_connected", "refused_speaker", "engine_down", "channel_gone",
+                           "no_rooms", "nothing_waiting", "nothing_to_repeat"):
+            wav = _dev_ack_wav(res.say, rvoice)
+        else:
+            wav = synth(res.say, rvoice, num_step=st, speed=sp, guidance_scale=gd,
+                        class_temperature=tp)
+    else:
+        wav = _silence_wav()
+    t_tts = time.time()
+    print(f"[room-turn] dev={device} spk={spk_name or 'unknown'}({spk_conf:.2f}) "
+          f"-> {route_label}:{res.outcome} | stt={int((t_stt - t0) * 1000)}ms "
+          f"turn={int((t_eng - t_stt) * 1000)}ms tts={int((t_tts - t_eng) * 1000)}ms "
+          f"| heard={transcript!r} said={res.say!r} | {json.dumps(res.extra, ensure_ascii=False)[:300]}",
+          flush=True)
+    _voice_journal({
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+        "utteranceId": res.extra.get("utteranceId"), "device": device, "mode": "room",
+        "text": transcript, "speaker": spk_name or "", "sid": spk_id or "",
+        "confidence": round(float(spk_conf), 3), "route": route_label, "outcome": res.outcome,
+        "cue": res.say, "expectsReply": res.expects_reply,
+        "extra": {k: v for k, v in res.extra.items() if k != "engine_body"},
+        "timing_ms": {"stt": int((t_stt - t0) * 1000), "turn": int((t_eng - t_stt) * 1000),
+                      "tts": int((t_tts - t_eng) * 1000), "total": int((t_tts - t0) * 1000)},
+    })
+    headers = {
+        "X-Transcript": urllib.parse.quote(transcript),
+        "X-Reply": urllib.parse.quote(res.say or ""),
+        "X-Speaker": urllib.parse.quote(spk_name or "unknown"),
+        "X-Speaker-Sid": spk_id or "",
+        "X-Speaker-Confidence": f"{spk_conf:.3f}",
+        "X-Followup-Listen": "1" if res.expects_reply else "0",
+        "X-Route": f"room:{route_label}:{res.outcome}",
+        "X-Utterance-Id": res.extra.get("utteranceId") or "",
+        "X-Timing": f"stt={int((t_stt - t0) * 1000)};turn={int((t_eng - t_stt) * 1000)};"
+                    f"tts={int((t_tts - t_eng) * 1000)};total={int((t_tts - t0) * 1000)}",
+        "Access-Control-Expose-Headers":
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Sid,X-Speaker-Confidence,"
+            "X-Followup-Listen,X-Route,X-Utterance-Id,X-Timing",
+    }
+    return Response(content=wav, media_type="audio/wav", headers=headers)
+
+
+def _room_turn_response(transcript, device, spk_id, spk_name, spk_conf, spk_detail, voice,
+                        t0, t_stt, is_followup, followup_to):
+    utt_id = f"v2v-{device}-{int(time.time() * 1000)}-{secrets.token_hex(2)}"
+    transcript = " ".join(_CTRL_RE.sub(" ", transcript or "").split())
+    match = "sticky" if str(spk_detail or "").startswith("sticky") else "full"
+    res = _room.room_turn(device, transcript, spk_name, spk_id, spk_conf, match, utt_id,
+                          is_followup=is_followup, followup_to=followup_to)
+    res.extra["utteranceId"] = utt_id
+    return _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf, spk_detail,
+                                voice, t0, t_stt, "turn")
+
+
+@app.post("/api/voice/devices/{device}/state")
+def voice_device_state(device: str, request: Request, payload: dict = Body(...)):
+    """Engine -> v2v (room-voice §9.3): the room connection's state for this device
+    {channelId, name, lead, muted, waiting, settings.voice}. Sent on connect, disconnect,
+    every mute/waiting change and every voice-settings change. channelId "" or
+    connected:false clears the connection (device back to chat)."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    if device not in _voice_devices():
+        return JSONResponse({"error": "device_unknown", "device": device}, status_code=404)
+    out = _room.apply_engine_state(device, payload)
+    print(f"[room] state from={who} dev={device}: {json.dumps(payload, ensure_ascii=False)[:300]}",
+          flush=True)
+    return out
+
+
+@app.get("/api/voice/devices/{device}/state")
+def voice_device_state_get(device: str, request: Request):
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    st = _room_state.get(device)
+    return {"device": device, "connected": bool(st.get("channelId")),
+            "mode": (_voice_devices().get(device) or {}).get("mode", "chat"), **st}
+
+
+@app.post("/api/voice/devices/{device}/simulate")
+def voice_device_simulate(device: str, request: Request, payload: dict = Body(...)):
+    """Test hook (bearer): run one turn from TEXT, skipping STT and speaker ID, so the
+    engine's fixture script and tools/room_voice_roundtrip.py can drive the whole path
+    without the Dot. Body {text, sid?, speaker?, confidence? (default 0.9), followup?,
+    followupTo?, speak? (default false: nothing is synthesized or played)}.
+    Returns the TurnResult as JSON. Never used by the bridge."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    if device not in _voice_devices():
+        return JSONResponse({"error": "device_unknown", "device": device}, status_code=404)
+    text = " ".join(_CTRL_RE.sub(" ", str(payload.get("text") or "")).split())
+    if not text:
+        return JSONResponse({"error": "bad_request", "field": "text"}, status_code=400)
+    sid = str(payload.get("sid") or "sim-eric")
+    speaker = str(payload.get("speaker") or "Eric")
+    try:
+        conf = float(payload.get("confidence", 0.9))
+    except (TypeError, ValueError):
+        conf = 0.9
+    is_followup = bool(payload.get("followup", False))
+    followup_to = str(payload.get("followupTo") or "").strip() or None
+    utt_id = f"sim-{device}-{int(time.time() * 1000)}-{secrets.token_hex(2)}"
+    t0 = time.time()
+    it = room_agent.parse_intent(text)
+    in_room = bool(_room_state.room_id(device))
+    if it and it["intent"] == "connect" and not in_room:
+        res = _room.connect_turn(device, it.get("target") or "", speaker, sid, conf)
+        label = "connect"
+    elif in_room:
+        res = _room.room_turn(device, text, speaker, sid, conf, "full", utt_id,
+                              is_followup=is_followup, followup_to=followup_to)
+        label = "turn"
+    else:
+        res = room_voice.TurnResult("", "not_connected")
+        label = "chat"
+    res.extra["utteranceId"] = utt_id
+    out = res.as_dict()
+    out.update({"device": device, "route": label, "turn_ms": int((time.time() - t0) * 1000),
+                "state": _room_state.get(device), "caller": who})
+    if payload.get("speak") and res.say:
+        dev = _voice_devices().get(device)
+        rvoice, _ = _room_voice_for(device, DEFAULT_VOICE)
+        wav = synth(res.say, rvoice)
+        st, body = _push_to_device(dev, wav, res.expects_reply, VOICE_DELIVER_TIMEOUT_S,
+                                   busy_wait=VOICE_BUSY_WAIT_S)
+        out["played"] = body
+    print(f"[room-sim] from={who} dev={device} {label}:{res.outcome} heard={text!r} "
+          f"said={res.say!r}", flush=True)
+    return out
 
 
 # ---------------------------------------------------------------------------
