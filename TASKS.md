@@ -164,3 +164,21 @@
 - After the NUC/VRPC reboot the Dot turns closed ~1.2 s after the wake word, before Eric spoke: VOICED_ABS_FLOOR=60 sat inside the mic noise band (44-98 rms) so 3 frames of hiss counted as "speech started" and the 0.8 s silence hang ended the turn; Whisper then hallucinated on the empty clip ("Okay", "check.", "Stay warm.") and speaker ID had nothing to score.
 - Measured on Eric's Dot-mic enrollment clips: speech median ~1800 rms, p10 100-770; noise max 98. Set VOICED_ABS_FLOOR=200 and SPEECH_START_FRAMES=6 (120 ms). Verified live: 3.76 s capture, transcript exact, spk=Eric(0.58), Jerma voice.
 - Every captured turn now lands at working/atom_echo/last_capture.wav (+previous_capture.wav) for diagnosis; both git-ignored.
+
+## 2026-09-28T19:30:00Z — Room voice (briefing-table docs/room-voice.md): V0 + V1 on branch room-voice
+- V0 (vk-1819): ESPHome entity dump on bridge connect -> working/atom_echo/esphome/entity_dumps/<device>.json.
+  Dot exposes NO light entity (media_player + Action Button event only); wake word "hey jarvis" is the only
+  one and active. LEDs go to the Walk list; no home-automation dispatch needed. Routing harness
+  tools/room_agent_harness.py: 74 labelled cases (6 classes), 28 non-sequitur checks, 20 intent checks,
+  30 cases spoken by OmniVoice and transcribed by faster-whisper before routing (Crawl proxy for Dot audio).
+- V1 (vk-1825): room_agent.py (logic tier: deterministic intents, open-mic non-sequitur filter, Ollama JSON
+  router with schema-enum actions answer|relay|lead, addressee taken from the words not the model, persisted
+  per-(room,speaker) memory). room_voice.py (engine client, per-device room state, connect/hop/disconnect,
+  the turn, stale-mode self-heal, mute via POST /api/voice/rooms/:id/mute). server.py: connect intent in
+  chat mode, room branch in dev mode, deliver kind/ifIdle/overCap:summarize/maxWords + 8 s busy wait +
+  muted suppression + relay prefix, POST/GET /api/voice/devices/{d}/state, POST .../simulate test hook.
+  Bridge: busy_wait + reply_id on /announce, followup + followup_to on the capture that follows a
+  start_conversation reply. tools/fake_engine.py + tools/room_voice_roundtrip.py: ALL PASS.
+- Decisions: relay addressee is deterministic (3B swapped unknown names for known seats); memory is
+  rendered as background text, not chat turns (the model continued the previous addressee otherwise);
+  summarize tier accepts 2000 chars; GPU restart order until V3 is v2v, then Ollama, then Krea.

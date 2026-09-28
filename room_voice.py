@@ -411,6 +411,8 @@ class RoomVoice:
                                        "sid": sid, "action": "answer", "answer": answer,
                                        "confidence": dec["confidence"], "followupTo": followup_to})
             self.memory.append(room_id, sid, transcript, answer, "answer")
+            self._push_exchange(device, {"kind": "in", "who": "user", "text": transcript, "vid": None})
+            self._push_exchange(device, {"kind": "out", "who": "voice", "text": answer, "vid": None})
             # §4: the open-mic window follows a voice-agent answer too.
             return TurnResult(answer, "answered", expects_reply=True, confidence=dec["confidence"])
 
@@ -434,6 +436,9 @@ class RoomVoice:
             else:
                 line = _fmt("relayed", name=_spoken_handle(to, lead))
             self.memory.append(room_id, sid, transcript, None, action)
+            self._push_exchange(device, {"kind": "in", "who": "user", "text": transcript,
+                                         "vid": resp.get("vid"), "lineId": resp.get("lineId"),
+                                         "to": to, "resolved": resolved})
             return TurnResult(line, "sent", vid=resp.get("vid"), to=to, resolved=resolved,
                               route=route, engine_body=resp)
         if status in (404, 409):
@@ -494,3 +499,17 @@ class RoomVoice:
         self.state.update(device, lastSpoken={"author": author or "voice", "body": body,
                                               "vid": vid, "at": time.time()},
                           lastReplyId=reply_id)
+        self._push_exchange(device, {"kind": "out", "who": author or "voice", "text": body,
+                                     "vid": reply_id or vid, "inReplyTo": vid})
+
+    EXCHANGES_KEEP = 10
+
+    def _push_exchange(self, device: str, entry: dict) -> None:
+        """The panel (§9.5) shows the last exchanges; keep a short ring in the state row.
+        Shape: {t, kind:"in"|"out", who:"user"|"voice"|<seat handle>, text, vid?, lineId?}."""
+        st = self.state.get(device)
+        if not st.get("channelId"):
+            return
+        ring = list(st.get("exchanges") or [])
+        ring.append({"t": time.time(), **entry})
+        self.state.update(device, exchanges=ring[-self.EXCHANGES_KEEP:])
