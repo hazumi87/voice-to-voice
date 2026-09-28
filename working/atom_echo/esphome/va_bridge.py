@@ -328,9 +328,11 @@ class VoiceBridge:
         self._next_run_followup = None
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_START, {})
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_START, {})
-        if self.listen_cue and _CUE_LISTEN:
+        if self.listen_cue and _CUE_LISTEN and self._run_followup is None:
             # Hold the mic closed (drop audio) until the cue has played; capped so a
-            # cue that never confirms can't eat the whole turn.
+            # cue that never confirms can't eat the whole turn. NOT on an open-mic
+            # follow-up: the reply just played is the invitation, and the beep's tail
+            # registered as speech (rms 219 for 0.5 s) and produced an empty turn.
             self._guard_until = max(self._guard_until, now + LISTEN_CUE_MAX_S)
             asyncio.create_task(self._play_listen_cue())
         if self._watchdog:
@@ -517,7 +519,11 @@ class VoiceBridge:
         # Kick the filler concurrently with the engine round trip; await it before
         # delivering the real reply so the two playbacks never overlap.
         filler_task = None
-        if self._fillers:
+        followup_run = self._run_followup is not None
+        if self._fillers and not followup_run:
+            # No filler on an open-mic follow-up: most follow-ups are "ok"/silence and the
+            # filler ("working on it") is wrong for those; a real follow-up gets its reply
+            # without the cover noise.
             filler_task = asyncio.create_task(self._play_filler())
 
         def _post():
@@ -540,6 +546,10 @@ class VoiceBridge:
                 await asyncio.gather(filler_task, return_exceptions=True)
             status = getattr(getattr(e, "response", None), "status_code", None)
             cue = _CUE_NO_SPEECH if status == 422 else _CUE_ENGINE_FAIL
+            if followup_run and status == 422:
+                # An open mic that heard nothing (or a hallucinated fragment): silent end.
+                self._log("[followup] empty open mic -> silent end (no cue, no filler)")
+                cue = None
             if cue is not None:
                 await self._serve_cue(cue)
             else:
