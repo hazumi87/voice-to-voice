@@ -45,7 +45,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(HERE, "voice_app_assets")
 
 ROOM_PREFIX = "room:"
+# Number of Q/A EXCHANGES (pairs) the frame renders -- not raw messages.
 EXCHANGES_KEEP = 3
+# Raw in/out items kept server-side before the client groups them into
+# exchanges. Generous on purpose: a pair can have more than one "out", so
+# 2x EXCHANGES_KEEP is not always enough to reconstruct the last
+# EXCHANGES_KEEP pairs. This is just a payload cap, not the render count.
+_RAW_ITEMS_KEEP = 24
 FIXTURE_ROOM_ID = "fixture"
 
 # Sent on every view response. The proxy's own CSP is the enforced boundary
@@ -108,7 +114,7 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
             "serverTime": time.time(),
         }
     row = row or {}
-    exchanges = list(row.get("exchanges") or [])[-EXCHANGES_KEEP:]
+    exchanges = list(row.get("exchanges") or [])[-_RAW_ITEMS_KEEP:]
     speaking_until = row.get("speakingUntil")
     speaking = speaking_until is not None and time.time() < speaking_until
     return {
@@ -199,7 +205,14 @@ def _fixture_state_payload(qp) -> dict:
             exchanges.append({"t": t + 5, "kind": "out", "who": "voice",
                                "text": outs[i], "vid": "V%d" % (100 + i),
                                "lineId": "fx-out-%d" % i})
-        exchanges = exchanges[-EXCHANGES_KEEP * 2:]
+        if waiting:
+            # A pending exchange: a question with no reply yet, chronologically
+            # the most recent. The client's grouping renders this as the ONE
+            # coral "waiting" marker, since it lands as the most recent group.
+            exchanges.append({"t": now - 5, "kind": "in", "who": "user",
+                               "text": "Is the fallback plan ready.",
+                               "lineId": "fx-in-pending"})
+        exchanges = exchanges[-_RAW_ITEMS_KEEP:]
 
     return {
         "connected": connected,
@@ -224,8 +237,8 @@ _PAGE_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Voice</title>
-<link rel="stylesheet" href="../../assets/tokens.css">
-<link rel="stylesheet" href="../../assets/app.css">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <div class="fr" id="frame">
@@ -239,7 +252,7 @@ _PAGE_TEMPLATE = """<!doctype html>
 </div>
 <noscript>Enable scripts to use the voice panel.</noscript>
 <script id="initial-state" type="application/json">%(seed)s</script>
-<script src="../../assets/app.js"></script>
+<script src="assets/app.js"></script>
 </body>
 </html>
 """
@@ -306,7 +319,7 @@ def mount(app, state_getter, devices_getter) -> None:
             "panel": {
                 "title": "Voice",
                 "url": "%s/apps/voice/rooms/%s/view" % (base, room_id),
-                "kind": "app",
+                "kind": "voice",
                 "icon": "mic",
                 "scripts": True,
                 "uploads": False,
@@ -323,8 +336,7 @@ def mount(app, state_getter, devices_getter) -> None:
         }
         return _head_safe(request, _cors(JSONResponse(payload)))
 
-    @router.api_route("/apps/voice/assets/{asset_path:path}", methods=["GET", "HEAD"])
-    def assets(asset_path: str, request: Request):
+    def _serve_asset(asset_path: str, request: Request) -> Response:
         # No dotdot, no absolute escape -- resolve under ASSETS_DIR and verify.
         norm = os.path.normpath(asset_path).replace("\\", "/")
         if norm.startswith("..") or norm.startswith("/"):
@@ -341,5 +353,23 @@ def mount(app, state_getter, devices_getter) -> None:
             body = f.read()
         resp = Response(content=body, media_type=ctype)
         return _head_safe(request, _cors(resp))
+
+    @router.api_route("/apps/voice/assets/{asset_path:path}", methods=["GET", "HEAD"])
+    def assets(asset_path: str, request: Request):
+        # Kept for direct/manual opens (curl, "open in new tab"). The engine's
+        # panel proxy never hits this one -- see rooms_assets below.
+        return _serve_asset(asset_path, request)
+
+    @router.api_route("/apps/voice/rooms/{room_id}/assets/{asset_path:path}", methods=["GET", "HEAD"])
+    def rooms_assets(room_id: str, asset_path: str, request: Request):
+        # The engine's panel proxy resolves the view's relative URLs
+        # (href="assets/...") against the VIEW's own directory
+        # (/apps/voice/rooms/<room_id>/) and 400s any path that climbs out
+        # with "..". So every asset the view links to must live under that
+        # same directory -- this route, not the flat /apps/voice/assets/
+        # one above. room_id is accepted (and otherwise unused) purely so
+        # the URL shape matches; every room -- including "fixture" -- serves
+        # the same static bundle from ASSETS_DIR.
+        return _serve_asset(asset_path, request)
 
     app.include_router(router)

@@ -37,6 +37,10 @@ button {
 }
 
 /* ---------- the frame shell ---------- */
+/* min-height 96 / the .exs max-height below together bound this element's
+   own scrollHeight to the host's 96-320 clamp -- app.js also clamps in JS
+   as a second layer, but the layout itself must never require more than
+   320px so .fr-top (device/speaking/Mute/Disconnect) is always visible. */
 .fr {
   padding: 10px 14px 10px;
   min-height: 96px;
@@ -111,7 +115,7 @@ button {
   display: grid;
   place-items: center;
   border: 1px solid var(--border2);
-  border-radius: 6px;
+  border-radius: var(--corner);
   color: var(--dim);
   flex: none;
 }
@@ -162,7 +166,8 @@ button {
   outline-offset: 2px;
 }
 
-@media (max-width: 420px) {
+/* Touch, not iframe width -- the iframe is narrow on desktop too. */
+@media (pointer: coarse) {
   .mute {
     width: 40px;
     height: 40px;
@@ -180,6 +185,9 @@ button {
   padding: 5px 6px;
 }
 
+/* the scrolling region -- kept under the .fr-top budget so the WHOLE frame
+   (padding + fr-top + this) never exceeds the host's 320px clamp, and
+   .fr-top (device, speaking, Mute, Disconnect) is always visible. */
 .exs {
   list-style: none;
   margin: 8px 0 0;
@@ -187,15 +195,19 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
+/* one EXCHANGE (a paired "in" question + its "out" reply/replies) per row:
+   v+q on the first grid line, a on the second (grid-column:2, below q). */
 .ex {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 2px 8px;
   text-align: left;
   padding: 5px 6px;
-  border-radius: 4px;
+  border-radius: var(--corner);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -231,6 +243,7 @@ button {
 }
 
 .ex .a {
+  grid-column: 2;
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;

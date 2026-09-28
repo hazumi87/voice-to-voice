@@ -24,7 +24,6 @@
   var frameEl = document.getElementById("frame");
   var devEl = document.getElementById("dev");
   var exchangesEl = document.getElementById("exchanges");
-  var speakingRow = document.getElementById("speakingRow");
   var muteBtn = document.getElementById("muteBtn");
   var disconnectBtn = document.getElementById("disconnectBtn");
 
@@ -100,10 +99,33 @@
     };
   }
 
+  // The contract is EXCHANGES (a question + the reply/replies that follow
+  // it), not raw messages. Pair each "in" with the "out" item(s) up to the
+  // next "in": { in, outs: [...] }. An "out" arriving before any "in" (only
+  // possible if the server's raw window got truncated mid-pair) still gets
+  // a group of its own rather than being dropped.
+  function groupExchanges(list) {
+    var groups = [];
+    var cur = null;
+    (list || []).forEach(function (item) {
+      if (item.kind === "in") {
+        cur = { in: item, outs: [] };
+        groups.push(cur);
+      } else if (item.kind === "out") {
+        if (!cur) {
+          cur = { in: null, outs: [] };
+          groups.push(cur);
+        }
+        cur.outs.push(item);
+      }
+    });
+    return groups;
+  }
+
   function renderExchanges(list, waiting) {
     exchangesEl.textContent = "";
-    var items = (list || []).slice(-3);
-    if (items.length === 0) {
+    var groups = groupExchanges(list).slice(-3);
+    if (groups.length === 0) {
       var empty = document.createElement("li");
       empty.className = "empty-row";
       empty.textContent = "No exchanges yet.";
@@ -111,52 +133,65 @@
       return;
     }
 
-    // The ONE waiting marker: the most recent "out" row, only while
-    // state.waiting is true. Never any other row.
-    var lastOutIdx = -1;
-    items.forEach(function (ex, i) {
-      if (ex.kind === "out") {
-        lastOutIdx = i;
-      }
-    });
+    var lastIdx = groups.length - 1;
 
-    items.forEach(function (ex, i) {
+    groups.forEach(function (grp, gi) {
       var li = document.createElement("li");
       li.className = "ex";
 
+      var lastOut = grp.outs.length ? grp.outs[grp.outs.length - 1] : null;
+
       var lead = document.createElement("span");
       lead.className = "v";
-      lead.textContent = (ex.kind === "out" && ex.vid) ? "#" + ex.vid : fmtWho(ex.who);
+      lead.textContent = (lastOut && lastOut.vid) ? "#" + lastOut.vid : fmtWho(grp.in ? grp.in.who : "voice");
       li.appendChild(lead);
 
-      var textSpan = document.createElement("span");
-      textSpan.className = ex.kind === "out" ? "a" : "q";
-      textSpan.textContent = ex.text || "";
-      if (ex.text) {
-        textSpan.title = ex.text;
+      var q = document.createElement("span");
+      q.className = "q";
+      q.textContent = grp.in ? (grp.in.text || "") : "";
+      if (grp.in && grp.in.text) {
+        q.title = grp.in.text;
       }
-      if (ex.kind === "out" && i === lastOutIdx && waiting) {
-        textSpan.appendChild(document.createTextNode(" · "));
+      li.appendChild(q);
+
+      var a = document.createElement("span");
+      a.className = "a";
+      if (grp.outs.length) {
+        var text = grp.outs.map(function (o) { return o.text || ""; }).join(" ");
+        a.textContent = text;
+        if (text) {
+          a.title = text;
+        }
+      } else if (waiting && gi === lastIdx) {
+        // The ONE waiting marker: coral, only on the most recent exchange,
+        // only while state.waiting is true. Never any other row.
         var wt = document.createElement("span");
         wt.className = "wt";
         wt.textContent = "waiting";
-        textSpan.appendChild(wt);
+        a.appendChild(wt);
+      } else {
+        // Pending (no reply yet, not the one the host is flagging as
+        // waiting-on) -- a plain dim marker, not coral.
+        a.textContent = "…";
       }
-      li.appendChild(textSpan);
+      li.appendChild(a);
 
-      // The fallback-lead note: plain dim text under an "in" exchange,
-      // never amber or coral.
-      if (ex.kind === "in" && ex.resolved === "fallback-lead") {
+      // The fallback-lead note: plain dim text under the "in" side of an
+      // exchange, never amber or coral.
+      if (grp.in && grp.in.resolved === "fallback-lead") {
         var note = document.createElement("div");
         note.className = "nt";
         note.textContent = "heard, no seat matched";
         li.appendChild(note);
       }
 
-      if (ex.lineId) {
+      // Prefer the last reply's lineId (the most specific "this is what got
+      // clicked"); fall back to the question's.
+      var lineId = (lastOut && lastOut.lineId) || (grp.in && grp.in.lineId);
+      if (lineId) {
         li.tabIndex = 0;
         li.setAttribute("role", "button");
-        var pick = makePick(ex.lineId, li);
+        var pick = makePick(lineId, li);
         li.addEventListener("click", pick);
         li.addEventListener("keydown", function (ev) {
           if (ev.key === "Enter" || ev.key === " ") {
@@ -189,8 +224,18 @@
     disconnectBtn.disabled = !connected;
   }
 
+  // The CONTENT height (the .fr root -- never the document): .exs's own
+  // max-height/overflow-y already keeps the frame's natural layout height
+  // at or under the host's 320 clamp with .fr-top always visible; this is
+  // belt-and-suspenders on top of that CSS budget, and the 96 floor matches
+  // .fr's own min-height.
+  function measureHeight() {
+    var h = Math.ceil(frameEl.scrollHeight);
+    return Math.max(96, Math.min(320, h));
+  }
+
   function postHeight() {
-    var px = Math.ceil(document.documentElement.scrollHeight);
+    var px = measureHeight();
     if (px !== lastHeight) {
       lastHeight = px;
       post({ panel: "height", px: px });
@@ -231,6 +276,15 @@
   });
 
   window.addEventListener("resize", postHeight);
+
+  // Catches content-driven size changes (font load reflow, a row's text
+  // wrapping differently, etc.) that a window resize wouldn't fire for --
+  // on top of the post-after-every-render call already in render().
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(function () {
+      postHeight();
+    }).observe(frameEl);
+  }
 
   // Render fast, before the first poll returns, so the frame is never blank
   // (blank-frame handling belongs to the host, but we still don't hand it
