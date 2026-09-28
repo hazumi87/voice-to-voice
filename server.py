@@ -3210,6 +3210,8 @@ def voice_device_state_get(device: str, request: Request):
     who = _voice_auth(request)
     if not who:
         return _voice_unauth()
+    if device not in _voice_devices():
+        return JSONResponse({"error": "device_unknown", "device": device}, status_code=404)
     st = _room_state.get(device)
     return {"device": device, "connected": bool(st.get("channelId")),
             "mode": (_voice_devices().get(device) or {}).get("mode", "chat"), **st}

@@ -130,3 +130,25 @@ The small chat model (llama3.2:3b) ignores several persona instructions; we stri
   output will be cold. Watch the `[synth] warm_covered=` flag.
 - **Lazy vs metadata lists (§2/§3):** when a resource has a "registered" list and a "built/cached"
   list, validate against the registered one and build lazily. Don't gate visibility on the cache.
+
+## 2026-09-28 — Room voice router (room_agent.py, harness tools/room_agent_harness.py)
+
+Two findings from the V0 accuracy harness (llama3.2:3b, Ollama structured output), both now load-bearing:
+
+1. **The relay addressee comes from the words, never from the model.** With a free choice of `to`, the 3B
+   model swapped an unknown name for a seat it knew ("tell zorblax ..." -> to=aurora) and, given history, kept
+   the previous turn's addressee. `room_agent.extract_addressee()` parses "tell / ask / message / let X know ..."
+   deterministically and overrides the model's `to`; an utterance without a relay verb can never be a relay
+   (it is the lead's). The engine resolves the name (exact -> alias -> fallback-lead), so a heard name like
+   "client manager" or "Aurora designed" still lands. After this the model only really decides answer vs lead.
+2. **Memory is rendered as background text, not as chat turns.** Feeding the last exchanges as user/assistant
+   messages made the model treat the new utterance as a continuation of the previous one. `RoomMemory.as_history()`
+   now returns ONE system note ("Previous exchanges (background only; decide the NEW utterance on its own)").
+3. Schema-enum output (`format` = JSON schema with `action` enum answer|relay|lead) removed label drift
+   ("add_tool") and cut latency from 6-16 s of free-form JSON to p90 0.6 s: the model stops generating as soon
+   as the schema is satisfied. Parse failures 0/73; any parse failure routes to the lead with a note.
+4. Under Krea rendering at 100% GPU the router still hit p90 0.61 s, but OmniVoice synth took ~110 s per line
+   (steps=32) instead of a few seconds. Harness latency notes carry the GPU state for that reason.
+5. The 73/73 figure was reached after tuning the prompt on the same set (two misses fixed). A held-out block
+   (`heldout: true` in room_agent_cases.json) is scored separately and is never tuned on; the first real
+   unseen check is the live gate G.

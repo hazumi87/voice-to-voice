@@ -150,6 +150,10 @@ def run(args) -> dict:
         c = by_class.setdefault(r["class"], {"n": 0, "ok": 0})
         c["n"] += 1
         c["ok"] += 1 if r["ok"] else 0
+    heldout = [r for r in results if r["class"] == "heldout"]
+    heldout_ok = sum(1 for r in heldout if r["ok"])
+    tuned = [r for r in results if r["class"] != "heldout"]
+    tuned_ok = sum(1 for r in tuned if r["ok"])
     forbidden = [r for r in results if r["class"] == "forbidden"]
     forbidden_to_lead = sum(1 for r in forbidden if r["action"] == "lead")
     lats = sorted(r["latency_s"] for r in results if r["latency_s"] is not None)
@@ -160,6 +164,9 @@ def run(args) -> dict:
         "model": args.model, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "n": n, "correct": correct, "accuracy": round(correct / n, 4) if n else None,
         "by_class": {k: {**v, "accuracy": round(v["ok"] / v["n"], 3)} for k, v in by_class.items()},
+        "tuned_n": len(tuned), "tuned_correct": tuned_ok,
+        "heldout_n": len(heldout), "heldout_correct": heldout_ok,
+        "heldout_accuracy": round(heldout_ok / len(heldout), 4) if heldout else None,
         "forbidden_n": len(forbidden), "forbidden_to_lead": forbidden_to_lead,
         "forbidden_rate": round(forbidden_to_lead / len(forbidden), 4) if forbidden else None,
         "stt_cases": stt_done, "parse_failures": parse_fail,
@@ -193,6 +200,8 @@ def markdown(report: dict) -> str:
     g = s["gates"]
     lines = [f"Harness {s['model']} @ {s['ts']}: {s['correct']}/{s['n']} = {s['accuracy']*100:.1f}% "
              f"(gate >=90%: {'PASS' if g['accuracy_ge_90'] else 'FAIL'})",
+             f"tuned set {s['tuned_correct']}/{s['tuned_n']}; HELD-OUT (never tuned on) "
+             f"{s['heldout_correct']}/{s['heldout_n']}",
              f"forbidden -> lead: {s['forbidden_to_lead']}/{s['forbidden_n']} "
              f"({'PASS' if g['forbidden_100'] else 'FAIL'})",
              f"latency p50 {s['latency_p50_s']:.2f}s, p90 {s['latency_p90_s']:.2f}s "

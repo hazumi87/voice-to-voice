@@ -1,129 +1,1026 @@
 {
-  "_doc": "room-voice §6.5 labelled set (vk-1819). class: implicit_relay|explicit_relay|lead_explicit|room_question|forbidden|misheard. expect.action is the required label; expect.actions lists acceptable alternatives; expect.to_contains must appear (case-insensitive) in the routed 'to'. stt:true cases are spoken by OmniVoice and transcribed by faster-whisper before routing, so misheard names come from the real STT.",
+  "_doc": "room-voice §6.5 labelled set (vk-1819). class: implicit_relay|explicit_relay|lead_explicit|room_question|forbidden|misheard. expect.action is the required label; expect.actions lists acceptable alternatives; expect.to_contains must appear (case-insensitive) in the routed 'to'. stt:true cases are spoken by OmniVoice and transcribed by faster-whisper before routing, so misheard names come from the real STT. heldout:true cases were written AFTER the prompt was tuned and are never tuned on; the harness scores them on their own line.",
   "context": {
-    "user": {"name": "Eric"},
-    "room": {"name": "Voice Interaction", "mode": "open", "lead": "briefing-table"},
+    "user": {
+      "name": "Eric"
+    },
+    "room": {
+      "name": "Voice Interaction",
+      "mode": "open",
+      "lead": "briefing-table"
+    },
     "seats": [
-      {"handle": "briefing-table", "spokenName": "briefing table", "lead": true, "state": "working", "activity": "building E1", "lastLineAgoS": 180},
-      {"handle": "vrpc-briefing-table", "spokenName": "vrpc briefing table", "lead": false, "state": "idle", "activity": "", "lastLineAgoS": 1260},
-      {"handle": "aurora-design", "spokenName": "aurora", "lead": false, "state": "idle", "activity": "", "lastLineAgoS": 3900}
+      {
+        "handle": "briefing-table",
+        "spokenName": "briefing table",
+        "lead": true,
+        "state": "working",
+        "activity": "building E1",
+        "lastLineAgoS": 180
+      },
+      {
+        "handle": "vrpc-briefing-table",
+        "spokenName": "vrpc briefing table",
+        "lead": false,
+        "state": "idle",
+        "activity": "",
+        "lastLineAgoS": 1260
+      },
+      {
+        "handle": "aurora-design",
+        "spokenName": "aurora",
+        "lead": false,
+        "state": "idle",
+        "activity": "",
+        "lastLineAgoS": 3900
+      }
     ],
-    "tools": [{"title": "Voice", "kind": "voice", "seat": null}, {"title": "Tasks", "kind": "tasks", "seat": "briefing-table"}],
-    "connection": {"device": "echo-dot-biscuit", "since": 1790620000, "muted": false, "waiting": false},
+    "tools": [
+      {
+        "title": "Voice",
+        "kind": "voice",
+        "seat": null
+      },
+      {
+        "title": "Tasks",
+        "kind": "tasks",
+        "seat": "briefing-table"
+      }
+    ],
+    "connection": {
+      "device": "echo-dot-biscuit",
+      "since": 1790620000,
+      "muted": false,
+      "waiting": false
+    },
     "recent": [
-      {"id": 601, "kind": "chat", "author": "briefing-table", "target": null, "body": "E1 kind migration is in, running npm test now.", "agoS": 1500},
-      {"id": 602, "kind": "voice", "author": "user", "target": "briefing-table", "body": "I'd like the lookup button blue", "agoS": 1200},
-      {"id": 603, "kind": "voice", "author": "briefing-table", "target": null, "body": "Message received, working on the hat.", "agoS": 1180},
-      {"id": 604, "kind": "chat", "author": "aurora-design", "target": null, "body": "Mockup v1 posted at 1440 and 390.", "agoS": 3900},
-      {"id": 605, "kind": "chat", "author": "briefing-table", "target": null, "body": "Windows run is green.", "agoS": 180}
+      {
+        "id": 601,
+        "kind": "chat",
+        "author": "briefing-table",
+        "target": null,
+        "body": "E1 kind migration is in, running npm test now.",
+        "agoS": 1500
+      },
+      {
+        "id": 602,
+        "kind": "voice",
+        "author": "user",
+        "target": "briefing-table",
+        "body": "I'd like the lookup button blue",
+        "agoS": 1200
+      },
+      {
+        "id": 603,
+        "kind": "voice",
+        "author": "briefing-table",
+        "target": null,
+        "body": "Message received, working on the hat.",
+        "agoS": 1180
+      },
+      {
+        "id": 604,
+        "kind": "chat",
+        "author": "aurora-design",
+        "target": null,
+        "body": "Mockup v1 posted at 1440 and 390.",
+        "agoS": 3900
+      },
+      {
+        "id": 605,
+        "kind": "chat",
+        "author": "briefing-table",
+        "target": null,
+        "body": "Windows run is green.",
+        "agoS": 180
+      }
     ],
-    "open": [{"vid": "v4k7", "to": "briefing-table", "agoS": 1200, "delivered": "channel", "ackAgoS": 1180, "resultAgoS": null}],
-    "lastSpoken": {"vid": "v4k7", "author": "briefing-table", "body": "Message received, working on the hat.", "agoS": 1180}
+    "open": [
+      {
+        "vid": "v4k7",
+        "to": "briefing-table",
+        "agoS": 1200,
+        "delivered": "channel",
+        "ackAgoS": 1180,
+        "resultAgoS": null
+      }
+    ],
+    "lastSpoken": {
+      "vid": "v4k7",
+      "author": "briefing-table",
+      "body": "Message received, working on the hat.",
+      "agoS": 1180
+    }
   },
   "cases": [
-    {"id": "ir01", "class": "implicit_relay", "text": "I'd like to add a hat to the character", "expect": {"action": "lead"}},
-    {"id": "ir02", "class": "implicit_relay", "text": "the lookup button should be blue", "expect": {"action": "lead"}},
-    {"id": "ir03", "class": "implicit_relay", "text": "can we make the intro shorter", "expect": {"action": "lead"}},
-    {"id": "ir04", "class": "implicit_relay", "text": "let's move the logo to the top left", "expect": {"action": "lead"}},
-    {"id": "ir05", "class": "implicit_relay", "text": "I want the tasks synced to vikunja", "expect": {"action": "lead"}},
-    {"id": "ir06", "class": "implicit_relay", "text": "the font on the settings page is too small", "expect": {"action": "lead"}},
-    {"id": "ir07", "class": "implicit_relay", "text": "please make the welcome message friendlier", "expect": {"action": "lead"}},
-    {"id": "ir08", "class": "implicit_relay", "text": "change the default voice to jerma", "expect": {"action": "lead"}},
-    {"id": "ir09", "class": "implicit_relay", "text": "we need a dark mode on the room page", "expect": {"action": "lead"}},
-    {"id": "ir10", "class": "implicit_relay", "text": "I think the panel should remember its size", "expect": {"action": "lead"}},
-    {"id": "ir11", "class": "implicit_relay", "text": "the export is missing the timestamps", "expect": {"action": "lead"}},
-    {"id": "ir12", "class": "implicit_relay", "text": "I'd like the daily summary sent to my phone", "expect": {"action": "lead"}},
-    {"id": "ir13", "class": "implicit_relay", "text": "the phone layout still overlaps the header", "expect": {"action": "lead"}, "stt": true},
-
-    {"id": "er01", "class": "explicit_relay", "text": "tell aurora the button should say help", "expect": {"action": "relay", "to_contains": "aurora"}, "stt": true},
-    {"id": "er02", "class": "explicit_relay", "text": "message aurora that we need the mockup by tonight", "expect": {"action": "relay", "to_contains": "aurora"}},
-    {"id": "er03", "class": "explicit_relay", "text": "ask vrpc briefing table if the windows build passed", "expect": {"action": "relay", "to_contains": "vrpc"}, "stt": true},
-    {"id": "er04", "class": "explicit_relay", "text": "let aurora know the colors look great", "expect": {"action": "relay", "to_contains": "aurora"}},
-    {"id": "er05", "class": "explicit_relay", "text": "send aurora a note that the phone layout is broken", "expect": {"action": "relay", "to_contains": "aurora"}, "stt": true},
-    {"id": "er06", "class": "explicit_relay", "text": "ask the design agent to check the badge spacing", "expect": {"action": "relay", "to_contains": "design"}},
-    {"id": "er07", "class": "explicit_relay", "text": "tell vrpc briefing table to run the playwright tests again", "expect": {"action": "relay", "to_contains": "vrpc"}},
-    {"id": "er08", "class": "explicit_relay", "text": "message the cli manager that the tray icon is missing", "expect": {"action": "relay", "to_contains": "cli"}, "stt": true},
-    {"id": "er09", "class": "explicit_relay", "text": "ask aurora whether the mockup is ready", "expect": {"action": "relay", "to_contains": "aurora"}, "stt": true},
-    {"id": "er10", "class": "explicit_relay", "text": "relay to vrpc briefing table that the settings page crashed on edge", "expect": {"action": "relay", "to_contains": "vrpc"}},
-    {"id": "er11", "class": "explicit_relay", "text": "tell home automation the front door sensor is flaky", "expect": {"action": "relay", "to_contains": "home"}, "stt": true},
-    {"id": "er12", "class": "explicit_relay", "text": "let vrpc briefing table know the edge build looks good", "expect": {"action": "relay", "to_contains": "vrpc"}, "stt": true},
-
-    {"id": "le01", "class": "lead_explicit", "text": "tell the lead I want to see vikunja updated with the new tasks", "expect": {"action": "lead"}},
-    {"id": "le02", "class": "lead_explicit", "text": "message the lead that the lookup button should be blue", "expect": {"action": "lead"}},
-    {"id": "le03", "class": "lead_explicit", "text": "let the lead know I'm done for today", "expect": {"action": "lead"}},
-    {"id": "le04", "class": "lead_explicit", "text": "ask the lead when the build will be ready", "expect": {"action": "lead"}, "stt": true},
-    {"id": "le05", "class": "lead_explicit", "text": "tell briefing table the plan is approved", "expect": {"action": "lead", "actions": ["lead", "relay"]}, "stt": true},
-    {"id": "le06", "class": "lead_explicit", "text": "let the lead know the mockup is fine", "expect": {"action": "lead"}},
-    {"id": "le07", "class": "lead_explicit", "text": "tell the lead to merge when the tests pass", "expect": {"action": "lead"}},
-    {"id": "le08", "class": "lead_explicit", "text": "message briefing table that I approved the plan", "expect": {"action": "lead", "actions": ["lead", "relay"]}},
-    {"id": "le09", "class": "lead_explicit", "text": "ask the lead if anyone is blocked", "expect": {"action": "lead", "actions": ["lead", "answer"]}},
-    {"id": "le10", "class": "lead_explicit", "text": "tell the team lead we ship tomorrow", "expect": {"action": "lead"}},
-
-    {"id": "rq01", "class": "room_question", "text": "is anyone working right now", "expect": {"action": "answer"}},
-    {"id": "rq02", "class": "room_question", "text": "did the lead answer me yet", "expect": {"action": "answer"}, "stt": true},
-    {"id": "rq03", "class": "room_question", "text": "who is in the room", "expect": {"action": "answer"}},
-    {"id": "rq04", "class": "room_question", "text": "what tools are in the room", "expect": {"action": "answer"}},
-    {"id": "rq05", "class": "room_question", "text": "what's the last thing the lead said", "expect": {"action": "answer"}, "stt": true},
-    {"id": "rq06", "class": "room_question", "text": "how long ago did aurora post", "expect": {"action": "answer"}, "stt": true},
-    {"id": "rq07", "class": "room_question", "text": "is aurora in the room", "expect": {"action": "answer"}},
-    {"id": "rq08", "class": "room_question", "text": "what room am I connected to", "expect": {"action": "answer"}},
-    {"id": "rq09", "class": "room_question", "text": "are there any messages waiting for me", "expect": {"action": "answer"}},
-    {"id": "rq10", "class": "room_question", "text": "who is the lead here", "expect": {"action": "answer"}},
-    {"id": "rq11", "class": "room_question", "text": "what did vrpc briefing table say last", "expect": {"action": "answer"}, "stt": true},
-    {"id": "rq12", "class": "room_question", "text": "how many seats are in the room", "expect": {"action": "answer"}},
-    {"id": "rq13", "class": "room_question", "text": "has the lead acknowledged my message", "expect": {"action": "answer"}},
-
-    {"id": "fb01", "class": "forbidden", "text": "add the blender tool to the room", "expect": {"action": "lead"}},
-    {"id": "fb02", "class": "forbidden", "text": "remove aurora from the room", "expect": {"action": "lead"}, "stt": true},
-    {"id": "fb03", "class": "forbidden", "text": "invite tina to the room", "expect": {"action": "lead"}},
-    {"id": "fb04", "class": "forbidden", "text": "dissolve the room", "expect": {"action": "lead"}},
-    {"id": "fb05", "class": "forbidden", "text": "archive this room", "expect": {"action": "lead"}},
-    {"id": "fb06", "class": "forbidden", "text": "rename the room to voice lab", "expect": {"action": "lead"}},
-    {"id": "fb07", "class": "forbidden", "text": "change the room's voice to the pirate", "expect": {"action": "lead"}},
-    {"id": "fb08", "class": "forbidden", "text": "add a seat for home automation", "expect": {"action": "lead"}, "stt": true},
-    {"id": "fb09", "class": "forbidden", "text": "kick the cli manager out", "expect": {"action": "lead"}},
-    {"id": "fb10", "class": "forbidden", "text": "dispatch an agent to fix the build", "expect": {"action": "lead"}},
-    {"id": "fb11", "class": "forbidden", "text": "remove the tasks panel", "expect": {"action": "lead"}},
-    {"id": "fb12", "class": "forbidden", "text": "set the word cap to eighty", "expect": {"action": "lead"}},
-    {"id": "fb13", "class": "forbidden", "text": "run the merge lock command", "expect": {"action": "lead"}},
-
-    {"id": "mh01", "class": "misheard", "text": "tell Aurora the button should say help", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh02", "class": "misheard", "text": "message Aurora that the mockup is late", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh03", "class": "misheard", "text": "ask VRPC briefing table about the windows build", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh04", "class": "misheard", "text": "tell the CLI manager the tray is broken", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh05", "class": "misheard", "text": "let Aurora know the colors are fine", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh06", "class": "misheard", "text": "tell aurora design to fix the spacing", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh07", "class": "misheard", "text": "message briefing table that the plan is approved", "expect": {"action": "relay", "actions": ["relay", "lead"]}, "stt": true},
-    {"id": "mh08", "class": "misheard", "text": "ask Aurora if the phone layout is done", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh09", "class": "misheard", "text": "tell home automation the dot is offline", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh10", "class": "misheard", "text": "message the VRPC agent that edge crashed", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh11", "class": "misheard", "text": "ask the Aurora agent for the mockup link", "expect": {"action": "relay"}, "stt": true},
-    {"id": "mh12", "class": "misheard", "text": "tell Aurora we need the badge bigger", "expect": {"action": "relay"}, "stt": true}
+    {
+      "id": "ir01",
+      "class": "implicit_relay",
+      "text": "I'd like to add a hat to the character",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir02",
+      "class": "implicit_relay",
+      "text": "the lookup button should be blue",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir03",
+      "class": "implicit_relay",
+      "text": "can we make the intro shorter",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir04",
+      "class": "implicit_relay",
+      "text": "let's move the logo to the top left",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir05",
+      "class": "implicit_relay",
+      "text": "I want the tasks synced to vikunja",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir06",
+      "class": "implicit_relay",
+      "text": "the font on the settings page is too small",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir07",
+      "class": "implicit_relay",
+      "text": "please make the welcome message friendlier",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir08",
+      "class": "implicit_relay",
+      "text": "change the default voice to jerma",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir09",
+      "class": "implicit_relay",
+      "text": "we need a dark mode on the room page",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir10",
+      "class": "implicit_relay",
+      "text": "I think the panel should remember its size",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir11",
+      "class": "implicit_relay",
+      "text": "the export is missing the timestamps",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir12",
+      "class": "implicit_relay",
+      "text": "I'd like the daily summary sent to my phone",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "ir13",
+      "class": "implicit_relay",
+      "text": "the phone layout still overlaps the header",
+      "expect": {
+        "action": "lead"
+      },
+      "stt": true
+    },
+    {
+      "id": "er01",
+      "class": "explicit_relay",
+      "text": "tell aurora the button should say help",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      },
+      "stt": true
+    },
+    {
+      "id": "er02",
+      "class": "explicit_relay",
+      "text": "message aurora that we need the mockup by tonight",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      }
+    },
+    {
+      "id": "er03",
+      "class": "explicit_relay",
+      "text": "ask vrpc briefing table if the windows build passed",
+      "expect": {
+        "action": "relay",
+        "to_contains": "vrpc"
+      },
+      "stt": true
+    },
+    {
+      "id": "er04",
+      "class": "explicit_relay",
+      "text": "let aurora know the colors look great",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      }
+    },
+    {
+      "id": "er05",
+      "class": "explicit_relay",
+      "text": "send aurora a note that the phone layout is broken",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      },
+      "stt": true
+    },
+    {
+      "id": "er06",
+      "class": "explicit_relay",
+      "text": "ask the design agent to check the badge spacing",
+      "expect": {
+        "action": "relay",
+        "to_contains": "design"
+      }
+    },
+    {
+      "id": "er07",
+      "class": "explicit_relay",
+      "text": "tell vrpc briefing table to run the playwright tests again",
+      "expect": {
+        "action": "relay",
+        "to_contains": "vrpc"
+      }
+    },
+    {
+      "id": "er08",
+      "class": "explicit_relay",
+      "text": "message the cli manager that the tray icon is missing",
+      "expect": {
+        "action": "relay",
+        "to_contains": "cli"
+      },
+      "stt": true
+    },
+    {
+      "id": "er09",
+      "class": "explicit_relay",
+      "text": "ask aurora whether the mockup is ready",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      },
+      "stt": true
+    },
+    {
+      "id": "er10",
+      "class": "explicit_relay",
+      "text": "relay to vrpc briefing table that the settings page crashed on edge",
+      "expect": {
+        "action": "relay",
+        "to_contains": "vrpc"
+      }
+    },
+    {
+      "id": "er11",
+      "class": "explicit_relay",
+      "text": "tell home automation the front door sensor is flaky",
+      "expect": {
+        "action": "relay",
+        "to_contains": "home"
+      },
+      "stt": true
+    },
+    {
+      "id": "er12",
+      "class": "explicit_relay",
+      "text": "let vrpc briefing table know the edge build looks good",
+      "expect": {
+        "action": "relay",
+        "to_contains": "vrpc"
+      },
+      "stt": true
+    },
+    {
+      "id": "le01",
+      "class": "lead_explicit",
+      "text": "tell the lead I want to see vikunja updated with the new tasks",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "le02",
+      "class": "lead_explicit",
+      "text": "message the lead that the lookup button should be blue",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "le03",
+      "class": "lead_explicit",
+      "text": "let the lead know I'm done for today",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "le04",
+      "class": "lead_explicit",
+      "text": "ask the lead when the build will be ready",
+      "expect": {
+        "action": "lead"
+      },
+      "stt": true
+    },
+    {
+      "id": "le05",
+      "class": "lead_explicit",
+      "text": "tell briefing table the plan is approved",
+      "expect": {
+        "action": "lead",
+        "actions": [
+          "lead",
+          "relay"
+        ]
+      },
+      "stt": true
+    },
+    {
+      "id": "le06",
+      "class": "lead_explicit",
+      "text": "let the lead know the mockup is fine",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "le07",
+      "class": "lead_explicit",
+      "text": "tell the lead to merge when the tests pass",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "le08",
+      "class": "lead_explicit",
+      "text": "message briefing table that I approved the plan",
+      "expect": {
+        "action": "lead",
+        "actions": [
+          "lead",
+          "relay"
+        ]
+      }
+    },
+    {
+      "id": "le09",
+      "class": "lead_explicit",
+      "text": "ask the lead if anyone is blocked",
+      "expect": {
+        "action": "lead",
+        "actions": [
+          "lead",
+          "answer"
+        ]
+      }
+    },
+    {
+      "id": "le10",
+      "class": "lead_explicit",
+      "text": "tell the team lead we ship tomorrow",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "rq01",
+      "class": "room_question",
+      "text": "is anyone working right now",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq02",
+      "class": "room_question",
+      "text": "did the lead answer me yet",
+      "expect": {
+        "action": "answer"
+      },
+      "stt": true
+    },
+    {
+      "id": "rq03",
+      "class": "room_question",
+      "text": "who is in the room",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq04",
+      "class": "room_question",
+      "text": "what tools are in the room",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq05",
+      "class": "room_question",
+      "text": "what's the last thing the lead said",
+      "expect": {
+        "action": "answer"
+      },
+      "stt": true
+    },
+    {
+      "id": "rq06",
+      "class": "room_question",
+      "text": "how long ago did aurora post",
+      "expect": {
+        "action": "answer"
+      },
+      "stt": true
+    },
+    {
+      "id": "rq07",
+      "class": "room_question",
+      "text": "is aurora in the room",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq08",
+      "class": "room_question",
+      "text": "what room am I connected to",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq09",
+      "class": "room_question",
+      "text": "are there any messages waiting for me",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq10",
+      "class": "room_question",
+      "text": "who is the lead here",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq11",
+      "class": "room_question",
+      "text": "what did vrpc briefing table say last",
+      "expect": {
+        "action": "answer"
+      },
+      "stt": true
+    },
+    {
+      "id": "rq12",
+      "class": "room_question",
+      "text": "how many seats are in the room",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq13",
+      "class": "room_question",
+      "text": "has the lead acknowledged my message",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "fb01",
+      "class": "forbidden",
+      "text": "add the blender tool to the room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb02",
+      "class": "forbidden",
+      "text": "remove aurora from the room",
+      "expect": {
+        "action": "lead"
+      },
+      "stt": true
+    },
+    {
+      "id": "fb03",
+      "class": "forbidden",
+      "text": "invite tina to the room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb04",
+      "class": "forbidden",
+      "text": "dissolve the room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb05",
+      "class": "forbidden",
+      "text": "archive this room",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb06",
+      "class": "forbidden",
+      "text": "rename the room to voice lab",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb07",
+      "class": "forbidden",
+      "text": "change the room's voice to the pirate",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb08",
+      "class": "forbidden",
+      "text": "add a seat for home automation",
+      "expect": {
+        "action": "lead"
+      },
+      "stt": true
+    },
+    {
+      "id": "fb09",
+      "class": "forbidden",
+      "text": "kick the cli manager out",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb10",
+      "class": "forbidden",
+      "text": "dispatch an agent to fix the build",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb11",
+      "class": "forbidden",
+      "text": "remove the tasks panel",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb12",
+      "class": "forbidden",
+      "text": "set the word cap to eighty",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "fb13",
+      "class": "forbidden",
+      "text": "run the merge lock command",
+      "expect": {
+        "action": "lead"
+      }
+    },
+    {
+      "id": "mh01",
+      "class": "misheard",
+      "text": "tell Aurora the button should say help",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh02",
+      "class": "misheard",
+      "text": "message Aurora that the mockup is late",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh03",
+      "class": "misheard",
+      "text": "ask VRPC briefing table about the windows build",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh04",
+      "class": "misheard",
+      "text": "tell the CLI manager the tray is broken",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh05",
+      "class": "misheard",
+      "text": "let Aurora know the colors are fine",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh06",
+      "class": "misheard",
+      "text": "tell aurora design to fix the spacing",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh07",
+      "class": "misheard",
+      "text": "message briefing table that the plan is approved",
+      "expect": {
+        "action": "relay",
+        "actions": [
+          "relay",
+          "lead"
+        ]
+      },
+      "stt": true
+    },
+    {
+      "id": "mh08",
+      "class": "misheard",
+      "text": "ask Aurora if the phone layout is done",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh09",
+      "class": "misheard",
+      "text": "tell home automation the dot is offline",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh10",
+      "class": "misheard",
+      "text": "message the VRPC agent that edge crashed",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh11",
+      "class": "misheard",
+      "text": "ask the Aurora agent for the mockup link",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "mh12",
+      "class": "misheard",
+      "text": "tell Aurora we need the badge bigger",
+      "expect": {
+        "action": "relay"
+      },
+      "stt": true
+    },
+    {
+      "id": "ho01",
+      "class": "heldout",
+      "text": "the badge on the phone is too small",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho02",
+      "class": "heldout",
+      "text": "ask aurora to make the voice cell taller",
+      "expect": {
+        "action": "relay",
+        "to_contains": "aurora"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho03",
+      "class": "heldout",
+      "text": "has anyone posted in the last hour",
+      "expect": {
+        "action": "answer"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho04",
+      "class": "heldout",
+      "text": "give aurora a seat here",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho05",
+      "class": "heldout",
+      "text": "could we get the timestamps back on the export",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho06",
+      "class": "heldout",
+      "text": "who posted most recently",
+      "expect": {
+        "action": "answer"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho07",
+      "class": "heldout",
+      "text": "let home automation know the porch light is stuck on",
+      "expect": {
+        "action": "relay",
+        "to_contains": "home"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho08",
+      "class": "heldout",
+      "text": "turn off the voice panel",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho09",
+      "class": "heldout",
+      "text": "what is the lead working on",
+      "expect": {
+        "action": "answer"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho10",
+      "class": "heldout",
+      "text": "I think we should ship the summary feature next",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho11",
+      "class": "heldout",
+      "text": "tell the lead the harness passed",
+      "expect": {
+        "action": "lead"
+      },
+      "heldout": true
+    },
+    {
+      "id": "ho12",
+      "class": "heldout",
+      "text": "is my earlier message still open",
+      "expect": {
+        "action": "answer"
+      },
+      "heldout": true
+    }
   ],
   "non_sequiturs": {
-    "ignore": ["ok", "okay", "thanks", "thank you", "got it", "cool", "alright", "sounds good", "I'll be waiting", "great thanks", "perfect", "yep", "no thanks", "never mind", "that's all", "ok jarvis", "roger that", "understood"],
-    "keep": ["ok tell aurora the mockup is late", "thanks and also add a hat to the character", "no make it blue", "sounds good but move the logo", "yes do that", "is anyone working", "disconnect", "what's waiting", "say that again", "ok so the lookup button should be blue"]
+    "ignore": [
+      "ok",
+      "okay",
+      "thanks",
+      "thank you",
+      "got it",
+      "cool",
+      "alright",
+      "sounds good",
+      "I'll be waiting",
+      "great thanks",
+      "perfect",
+      "yep",
+      "no thanks",
+      "never mind",
+      "that's all",
+      "ok jarvis",
+      "roger that",
+      "understood"
+    ],
+    "keep": [
+      "ok tell aurora the mockup is late",
+      "thanks and also add a hat to the character",
+      "no make it blue",
+      "sounds good but move the logo",
+      "yes do that",
+      "is anyone working",
+      "disconnect",
+      "what's waiting",
+      "say that again",
+      "ok so the lookup button should be blue"
+    ]
   },
   "intents": [
-    {"text": "hey jarvis connect to briefing table workrooms", "expect": {"intent": "connect", "target": "briefing table"}},
-    {"text": "connect me to the voice interaction room", "expect": {"intent": "connect", "target": "voice interaction"}},
-    {"text": "jarvis, connect to asset platform apps", "expect": {"intent": "connect", "target": "asset platform apps"}},
-    {"text": "disconnect", "expect": {"intent": "disconnect"}},
-    {"text": "hang up", "expect": {"intent": "disconnect"}},
-    {"text": "leave the room", "expect": {"intent": "disconnect"}},
-    {"text": "disconnect me from the room", "expect": {"intent": "disconnect"}},
-    {"text": "mute", "expect": {"intent": "mute"}},
-    {"text": "mute yourself", "expect": {"intent": "mute"}},
-    {"text": "be quiet", "expect": {"intent": "mute"}},
-    {"text": "unmute", "expect": {"intent": "unmute"}},
-    {"text": "you can talk again", "expect": {"intent": "unmute"}},
-    {"text": "what's waiting", "expect": {"intent": "whats_waiting"}},
-    {"text": "anything waiting for me", "expect": {"intent": "whats_waiting"}},
-    {"text": "what did I miss", "expect": {"intent": "whats_waiting"}},
-    {"text": "say that again", "expect": {"intent": "say_again"}},
-    {"text": "repeat that", "expect": {"intent": "say_again"}},
-    {"text": "tell aurora to disconnect the printer", "expect": {"intent": null}},
-    {"text": "the mute button is too small", "expect": {"intent": null}},
-    {"text": "I'd like to connect the export to vikunja later", "expect": {"intent": null}}
+    {
+      "text": "hey jarvis connect to briefing table workrooms",
+      "expect": {
+        "intent": "connect",
+        "target": "briefing table"
+      }
+    },
+    {
+      "text": "connect me to the voice interaction room",
+      "expect": {
+        "intent": "connect",
+        "target": "voice interaction"
+      }
+    },
+    {
+      "text": "jarvis, connect to asset platform apps",
+      "expect": {
+        "intent": "connect",
+        "target": "asset platform apps"
+      }
+    },
+    {
+      "text": "disconnect",
+      "expect": {
+        "intent": "disconnect"
+      }
+    },
+    {
+      "text": "hang up",
+      "expect": {
+        "intent": "disconnect"
+      }
+    },
+    {
+      "text": "leave the room",
+      "expect": {
+        "intent": "disconnect"
+      }
+    },
+    {
+      "text": "disconnect me from the room",
+      "expect": {
+        "intent": "disconnect"
+      }
+    },
+    {
+      "text": "mute",
+      "expect": {
+        "intent": "mute"
+      }
+    },
+    {
+      "text": "mute yourself",
+      "expect": {
+        "intent": "mute"
+      }
+    },
+    {
+      "text": "be quiet",
+      "expect": {
+        "intent": "mute"
+      }
+    },
+    {
+      "text": "unmute",
+      "expect": {
+        "intent": "unmute"
+      }
+    },
+    {
+      "text": "you can talk again",
+      "expect": {
+        "intent": "unmute"
+      }
+    },
+    {
+      "text": "what's waiting",
+      "expect": {
+        "intent": "whats_waiting"
+      }
+    },
+    {
+      "text": "anything waiting for me",
+      "expect": {
+        "intent": "whats_waiting"
+      }
+    },
+    {
+      "text": "what did I miss",
+      "expect": {
+        "intent": "whats_waiting"
+      }
+    },
+    {
+      "text": "say that again",
+      "expect": {
+        "intent": "say_again"
+      }
+    },
+    {
+      "text": "repeat that",
+      "expect": {
+        "intent": "say_again"
+      }
+    },
+    {
+      "text": "tell aurora to disconnect the printer",
+      "expect": {
+        "intent": null
+      }
+    },
+    {
+      "text": "the mute button is too small",
+      "expect": {
+        "intent": null
+      }
+    },
+    {
+      "text": "I'd like to connect the export to vikunja later",
+      "expect": {
+        "intent": null
+      }
+    }
   ]
 }
