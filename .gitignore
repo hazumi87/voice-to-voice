@@ -59,3 +59,9 @@ avatar/poc1_smiling_archive/
 *.glb
 working/sketchfab_readyplayerme/
 working/atom_echo/*_capture.wav
+
+# room-voice harness scratch (audio cache + run logs); latest.json/previous.json ARE committed as evidence
+working/harness/stt_cache/
+working/harness/*.log
+working/room_voice_state.json*
+working/room_memory.json*

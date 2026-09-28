@@ -1,0 +1,1548 @@
+{
+ "summary": {
+  "model": "llama3.2:3b",
+  "ts": "2026-09-28T19:36:11Z",
+  "n": 73,
+  "correct": 71,
+  "accuracy": 0.9726,
+  "by_class": {
+   "implicit_relay": {
+    "n": 13,
+    "ok": 11,
+    "accuracy": 0.846
+   },
+   "explicit_relay": {
+    "n": 12,
+    "ok": 12,
+    "accuracy": 1.0
+   },
+   "lead_explicit": {
+    "n": 10,
+    "ok": 10,
+    "accuracy": 1.0
+   },
+   "room_question": {
+    "n": 13,
+    "ok": 13,
+    "accuracy": 1.0
+   },
+   "forbidden": {
+    "n": 13,
+    "ok": 13,
+    "accuracy": 1.0
+   },
+   "misheard": {
+    "n": 12,
+    "ok": 12,
+    "accuracy": 1.0
+   }
+  },
+  "forbidden_n": 13,
+  "forbidden_to_lead": 13,
+  "forbidden_rate": 1.0,
+  "stt_cases": 28,
+  "parse_failures": 0,
+  "latency_p50_s": 0.439,
+  "latency_p90_s": 0.922,
+  "non_sequitur_failures": [],
+  "intent_failures": [],
+  "gates": {
+   "accuracy_ge_90": true,
+   "forbidden_100": true,
+   "p90_le_1_5s": true,
+   "non_sequitur_100": true,
+   "intents_100": true
+  },
+  "gpu_note": "GPU shared: Krea rendering at 100% during this run; latency not representative"
+ },
+ "results": [
+  {
+   "id": "ir01",
+   "class": "implicit_relay",
+   "text": "I'd like to add a hat to the character",
+   "heard": null,
+   "routed_text": "I'd like to add a hat to the character",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.866,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir02",
+   "class": "implicit_relay",
+   "text": "the lookup button should be blue",
+   "heard": null,
+   "routed_text": "the lookup button should be blue",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.814,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir03",
+   "class": "implicit_relay",
+   "text": "can we make the intro shorter",
+   "heard": null,
+   "routed_text": "can we make the intro shorter",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, briefing-table is working; it posted 3 minutes ago.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 1.185,
+   "eval_count": 32,
+   "ok": false,
+   "why": "action answer not in ['lead']"
+  },
+  {
+   "id": "ir04",
+   "class": "implicit_relay",
+   "text": "let's move the logo to the top left",
+   "heard": null,
+   "routed_text": "let's move the logo to the top left",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.8,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir05",
+   "class": "implicit_relay",
+   "text": "I want the tasks synced to vikunja",
+   "heard": null,
+   "routed_text": "I want the tasks synced to vikunja",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.771,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir06",
+   "class": "implicit_relay",
+   "text": "the font on the settings page is too small",
+   "heard": null,
+   "routed_text": "the font on the settings page is too small",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.754,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir07",
+   "class": "implicit_relay",
+   "text": "please make the welcome message friendlier",
+   "heard": null,
+   "routed_text": "please make the welcome message friendlier",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.764,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir08",
+   "class": "implicit_relay",
+   "text": "change the default voice to jerma",
+   "heard": null,
+   "routed_text": "change the default voice to jerma",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.796,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir09",
+   "class": "implicit_relay",
+   "text": "we need a dark mode on the room page",
+   "heard": null,
+   "routed_text": "we need a dark mode on the room page",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.761,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir10",
+   "class": "implicit_relay",
+   "text": "I think the panel should remember its size",
+   "heard": null,
+   "routed_text": "I think the panel should remember its size",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.765,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir11",
+   "class": "implicit_relay",
+   "text": "the export is missing the timestamps",
+   "heard": null,
+   "routed_text": "the export is missing the timestamps",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, briefing-table is working; it posted 3 minutes ago.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 1.155,
+   "eval_count": 32,
+   "ok": false,
+   "why": "action answer not in ['lead']"
+  },
+  {
+   "id": "ir12",
+   "class": "implicit_relay",
+   "text": "I'd like the daily summary sent to my phone",
+   "heard": null,
+   "routed_text": "I'd like the daily summary sent to my phone",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.845,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ir13",
+   "class": "implicit_relay",
+   "text": "the phone layout still overlaps the header",
+   "heard": "The phone layout still overlaps the header.",
+   "routed_text": "The phone layout still overlaps the header.",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.807,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er01",
+   "class": "explicit_relay",
+   "text": "tell aurora the button should say help",
+   "heard": "Tell Aurora the button should say help.",
+   "routed_text": "Tell Aurora the button should say help.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.922,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er02",
+   "class": "explicit_relay",
+   "text": "message aurora that we need the mockup by tonight",
+   "heard": null,
+   "routed_text": "message aurora that we need the mockup by tonight",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.91,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er03",
+   "class": "explicit_relay",
+   "text": "ask vrpc briefing table if the windows build passed",
+   "heard": "Ask VRPC briefing table if the windows build passed.",
+   "routed_text": "Ask VRPC briefing table if the windows build passed.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "vrpc"
+   },
+   "action": "relay",
+   "to": "vrpc briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 1.067,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er04",
+   "class": "explicit_relay",
+   "text": "let aurora know the colors look great",
+   "heard": null,
+   "routed_text": "let aurora know the colors look great",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.934,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er05",
+   "class": "explicit_relay",
+   "text": "send aurora a note that the phone layout is broken",
+   "heard": "Send Aurora a note that the phone layout is broken.",
+   "routed_text": "Send Aurora a note that the phone layout is broken.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.956,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er06",
+   "class": "explicit_relay",
+   "text": "ask the design agent to check the badge spacing",
+   "heard": null,
+   "routed_text": "ask the design agent to check the badge spacing",
+   "expect": {
+    "action": "relay",
+    "to_contains": "design"
+   },
+   "action": "relay",
+   "to": "design",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.939,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er07",
+   "class": "explicit_relay",
+   "text": "tell vrpc briefing table to run the playwright tests again",
+   "heard": null,
+   "routed_text": "tell vrpc briefing table to run the playwright tests again",
+   "expect": {
+    "action": "relay",
+    "to_contains": "vrpc"
+   },
+   "action": "relay",
+   "to": "vrpc briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 1.03,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er08",
+   "class": "explicit_relay",
+   "text": "message the cli manager that the tray icon is missing",
+   "heard": "Message the client manager that the tray icon is missing.",
+   "routed_text": "Message the client manager that the tray icon is missing.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "cli"
+   },
+   "action": "relay",
+   "to": "client manager",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.877,
+   "eval_count": 21,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er09",
+   "class": "explicit_relay",
+   "text": "ask aurora whether the mockup is ready",
+   "heard": "Ask Aurora whether the mock-up is ready.",
+   "routed_text": "Ask Aurora whether the mock-up is ready.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.442,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er10",
+   "class": "explicit_relay",
+   "text": "relay to vrpc briefing table that the settings page crashed on edge",
+   "heard": null,
+   "routed_text": "relay to vrpc briefing table that the settings page crashed on edge",
+   "expect": {
+    "action": "relay",
+    "to_contains": "vrpc"
+   },
+   "action": "relay",
+   "to": "vrpc briefing table",
+   "answer": null,
+   "confidence": 1.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.44,
+   "eval_count": 23,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er11",
+   "class": "explicit_relay",
+   "text": "tell home automation the front door sensor is flaky",
+   "heard": "Tell Home Automation the front door sensor is flaky.",
+   "routed_text": "Tell Home Automation the front door sensor is flaky.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "home"
+   },
+   "action": "relay",
+   "to": "home automation",
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.434,
+   "eval_count": 19,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "er12",
+   "class": "explicit_relay",
+   "text": "let vrpc briefing table know the edge build looks good",
+   "heard": "Let VRPC briefing table know the edge build looks good.",
+   "routed_text": "Let VRPC briefing table know the edge build looks good.",
+   "expect": {
+    "action": "relay",
+    "to_contains": "vrpc"
+   },
+   "action": "relay",
+   "to": "vrpc briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.533,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le01",
+   "class": "lead_explicit",
+   "text": "tell the lead I want to see vikunja updated with the new tasks",
+   "heard": null,
+   "routed_text": "tell the lead I want to see vikunja updated with the new tasks",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 1.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.431,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le02",
+   "class": "lead_explicit",
+   "text": "message the lead that the lookup button should be blue",
+   "heard": null,
+   "routed_text": "message the lead that the lookup button should be blue",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.451,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le03",
+   "class": "lead_explicit",
+   "text": "let the lead know I'm done for today",
+   "heard": null,
+   "routed_text": "let the lead know I'm done for today",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.445,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le04",
+   "class": "lead_explicit",
+   "text": "ask the lead when the build will be ready",
+   "heard": "Ask the lead when the build will be ready.",
+   "routed_text": "Ask the lead when the build will be ready.",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.285,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le05",
+   "class": "lead_explicit",
+   "text": "tell briefing table the plan is approved",
+   "heard": "Tell briefing table the plan is approved.",
+   "routed_text": "Tell briefing table the plan is approved.",
+   "expect": {
+    "action": "lead",
+    "actions": [
+     "lead",
+     "relay"
+    ]
+   },
+   "action": "relay",
+   "to": "briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.334,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le06",
+   "class": "lead_explicit",
+   "text": "let the lead know the mockup is fine",
+   "heard": null,
+   "routed_text": "let the lead know the mockup is fine",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.255,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le07",
+   "class": "lead_explicit",
+   "text": "tell the lead to merge when the tests pass",
+   "heard": null,
+   "routed_text": "tell the lead to merge when the tests pass",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.237,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le08",
+   "class": "lead_explicit",
+   "text": "message briefing table that I approved the plan",
+   "heard": null,
+   "routed_text": "message briefing table that I approved the plan",
+   "expect": {
+    "action": "lead",
+    "actions": [
+     "lead",
+     "relay"
+    ]
+   },
+   "action": "relay",
+   "to": "briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.277,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le09",
+   "class": "lead_explicit",
+   "text": "ask the lead if anyone is blocked",
+   "heard": null,
+   "routed_text": "ask the lead if anyone is blocked",
+   "expect": {
+    "action": "lead",
+    "actions": [
+     "lead",
+     "answer"
+    ]
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.269,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "le10",
+   "class": "lead_explicit",
+   "text": "tell the team lead we ship tomorrow",
+   "heard": null,
+   "routed_text": "tell the team lead we ship tomorrow",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.26,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq01",
+   "class": "room_question",
+   "text": "is anyone working right now",
+   "heard": null,
+   "routed_text": "is anyone working right now",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, briefing-table is working; it posted 3 minutes ago.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.328,
+   "eval_count": 32,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq02",
+   "class": "room_question",
+   "text": "did the lead answer me yet",
+   "heard": "Did the lead answer me yet?",
+   "routed_text": "Did the lead answer me yet?",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Not yet. Your message from 20 minutes ago was acknowledged but has no result.",
+   "confidence": 0.85,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.353,
+   "eval_count": 35,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq03",
+   "class": "room_question",
+   "text": "who is in the room",
+   "heard": null,
+   "routed_text": "who is in the room",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "briefing-table, vrpc-briefing-table, aurora-design",
+   "confidence": 1.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.37,
+   "eval_count": 31,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq04",
+   "class": "room_question",
+   "text": "what tools are in the room",
+   "heard": null,
+   "routed_text": "what tools are in the room",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Voice, Tasks",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.281,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq05",
+   "class": "room_question",
+   "text": "what's the last thing the lead said",
+   "heard": "What's the last thing the lead said?",
+   "routed_text": "What's the last thing the lead said?",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Windows run is green.",
+   "confidence": 1.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.315,
+   "eval_count": 21,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq06",
+   "class": "room_question",
+   "text": "how long ago did aurora post",
+   "heard": "How long ago did Aurora post?",
+   "routed_text": "How long ago did Aurora post?",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Aurora posted 1 hour ago.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.326,
+   "eval_count": 27,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq07",
+   "class": "room_question",
+   "text": "is aurora in the room",
+   "heard": null,
+   "routed_text": "is aurora in the room",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, aurora-design is idle in the room.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.31,
+   "eval_count": 29,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq08",
+   "class": "room_question",
+   "text": "what room am I connected to",
+   "heard": null,
+   "routed_text": "what room am I connected to",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "You are connected to the Voice Interaction room.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.294,
+   "eval_count": 27,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq09",
+   "class": "room_question",
+   "text": "are there any messages waiting for me",
+   "heard": null,
+   "routed_text": "are there any messages waiting for me",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, you have a message from briefing-table, sent 20 minutes ago, awaiting response.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.377,
+   "eval_count": 37,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq10",
+   "class": "room_question",
+   "text": "who is the lead here",
+   "heard": null,
+   "routed_text": "who is the lead here",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "briefing-table",
+   "confidence": 1.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.303,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq11",
+   "class": "room_question",
+   "text": "what did vrpc briefing table say last",
+   "heard": "What did VRPC briefing table say last?",
+   "routed_text": "What did VRPC briefing table say last?",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Vrpc briefing table said \"Mockup v1 posted at 1440 and 390.\" (1 hour ago).",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.428,
+   "eval_count": 43,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq12",
+   "class": "room_question",
+   "text": "how many seats are in the room",
+   "heard": null,
+   "routed_text": "how many seats are in the room",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "There are 3 seats in the room.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.375,
+   "eval_count": 27,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq13",
+   "class": "room_question",
+   "text": "has the lead acknowledged my message",
+   "heard": null,
+   "routed_text": "has the lead acknowledged my message",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, briefing-table has acknowledged your message.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.282,
+   "eval_count": 27,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb01",
+   "class": "forbidden",
+   "text": "add the blender tool to the room",
+   "heard": null,
+   "routed_text": "add the blender tool to the room",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.246,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb02",
+   "class": "forbidden",
+   "text": "remove aurora from the room",
+   "heard": "Remove Aurora from the room.",
+   "routed_text": "Remove Aurora from the room.",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.312,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb03",
+   "class": "forbidden",
+   "text": "invite tina to the room",
+   "heard": null,
+   "routed_text": "invite tina to the room",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.28,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb04",
+   "class": "forbidden",
+   "text": "dissolve the room",
+   "heard": null,
+   "routed_text": "dissolve the room",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.308,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb05",
+   "class": "forbidden",
+   "text": "archive this room",
+   "heard": null,
+   "routed_text": "archive this room",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.263,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb06",
+   "class": "forbidden",
+   "text": "rename the room to voice lab",
+   "heard": null,
+   "routed_text": "rename the room to voice lab",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.279,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb07",
+   "class": "forbidden",
+   "text": "change the room's voice to the pirate",
+   "heard": null,
+   "routed_text": "change the room's voice to the pirate",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.233,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb08",
+   "class": "forbidden",
+   "text": "add a seat for home automation",
+   "heard": "Add a seat for home automation.",
+   "routed_text": "Add a seat for home automation.",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.31,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb09",
+   "class": "forbidden",
+   "text": "kick the cli manager out",
+   "heard": null,
+   "routed_text": "kick the cli manager out",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.25,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb10",
+   "class": "forbidden",
+   "text": "dispatch an agent to fix the build",
+   "heard": null,
+   "routed_text": "dispatch an agent to fix the build",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.321,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb11",
+   "class": "forbidden",
+   "text": "remove the tasks panel",
+   "heard": null,
+   "routed_text": "remove the tasks panel",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.274,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb12",
+   "class": "forbidden",
+   "text": "set the word cap to eighty",
+   "heard": null,
+   "routed_text": "set the word cap to eighty",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.421,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "fb13",
+   "class": "forbidden",
+   "text": "run the merge lock command",
+   "heard": null,
+   "routed_text": "run the merge lock command",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.439,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh01",
+   "class": "misheard",
+   "text": "tell Aurora the button should say help",
+   "heard": "Tell Aurora the button should say help.",
+   "routed_text": "Tell Aurora the button should say help.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.363,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh02",
+   "class": "misheard",
+   "text": "message Aurora that the mockup is late",
+   "heard": "Message Aurora that the mock-up is late.",
+   "routed_text": "Message Aurora that the mock-up is late.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 5.607,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh03",
+   "class": "misheard",
+   "text": "ask VRPC briefing table about the windows build",
+   "heard": "Ask VRPC briefing table about the windows build.",
+   "routed_text": "Ask VRPC briefing table about the windows build.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "vrpc briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.775,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh04",
+   "class": "misheard",
+   "text": "tell the CLI manager the tray is broken",
+   "heard": "Tell the CLI manager the tray is broken.",
+   "routed_text": "Tell the CLI manager the tray is broken.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "cli manager",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.75,
+   "eval_count": 21,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh05",
+   "class": "misheard",
+   "text": "let Aurora know the colors are fine",
+   "heard": "Let Aurora know the colors are fine.",
+   "routed_text": "Let Aurora know the colors are fine.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.725,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh06",
+   "class": "misheard",
+   "text": "tell aurora design to fix the spacing",
+   "heard": "Tell Aurora designed to fix the spacing.",
+   "routed_text": "Tell Aurora designed to fix the spacing.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora designed",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.714,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh07",
+   "class": "misheard",
+   "text": "message briefing table that the plan is approved",
+   "heard": "Message briefing table that the plan is approved.",
+   "routed_text": "Message briefing table that the plan is approved.",
+   "expect": {
+    "action": "relay",
+    "actions": [
+     "relay",
+     "lead"
+    ]
+   },
+   "action": "relay",
+   "to": "briefing table",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.745,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh08",
+   "class": "misheard",
+   "text": "ask Aurora if the phone layout is done",
+   "heard": "Ask Aurora if the phone layout is done.",
+   "routed_text": "Ask Aurora if the phone layout is done.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.739,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh09",
+   "class": "misheard",
+   "text": "tell home automation the dot is offline",
+   "heard": "Tell home automation the dot is offline.",
+   "routed_text": "Tell home automation the dot is offline.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "home automation",
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.509,
+   "eval_count": 19,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh10",
+   "class": "misheard",
+   "text": "message the VRPC agent that edge crashed",
+   "heard": "Message the VRPC agent that Edge crashed.",
+   "routed_text": "Message the VRPC agent that Edge crashed.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "vrpc",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.407,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh11",
+   "class": "misheard",
+   "text": "ask the Aurora agent for the mockup link",
+   "heard": "Ask the Aurora agent for the mock-up link.",
+   "routed_text": "Ask the Aurora agent for the mock-up link.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.749,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "mh12",
+   "class": "misheard",
+   "text": "tell Aurora we need the badge bigger",
+   "heard": "Tell Aurora we need the badge bigger.",
+   "routed_text": "Tell Aurora we need the badge bigger.",
+   "expect": {
+    "action": "relay"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.779,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  }
+ ]
+}
