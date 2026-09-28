@@ -182,3 +182,16 @@
 - Decisions: relay addressee is deterministic (3B swapped unknown names for known seats); memory is
   rendered as background text, not chat turns (the model continued the previous addressee otherwise);
   summarize tier accepts 2000 chars; GPU restart order until V3 is v2v, then Ollama, then Krea.
+
+## 2026-09-28T20:05:00Z — Room voice V2 + merge to main (f53d6c3), v2v deployed
+- V2 (vk-1826): voice_app.py + voice_app_assets/ (app.js, app.css, vendored tokens.css + Inter/Space Grotesk/
+  JetBrains Mono woff2 with OFL texts, CORS * on every response). Routes under /apps/voice/: rooms/{id}/view,
+  /state, /tool.json, assets/*, and rooms/fixture/{view,state} driven by query params (state, muted, waiting,
+  exchanges, long, fallback, speaking) with window.__posted for Playwright. Restyled to Aurora's
+  room-voice-v1 mockup. Frame posts status/height/voice/line only.
+- Speaking signal: room_voice.RoomVoice.mark_speaking sets speakingUntil for the WAV duration around deliver
+  playback and room-turn replies; the panel state route computes speaking from it.
+- E1c clear-waiting route added to the engine client. Held-out harness block (12 cases, never tuned on): 12/12.
+- V0 accepted by the lead (vk-1819 closed). Merged room-voice -> main twice (0a5f394, f53d6c3) under MERGE-LOCK
+  announced in the room; v2v restarted each time in the §11 GPU order (router unloaded first).
+- Open: E1 fixture round trip when the engine posts "E1 FIXTURE READY"; live Dot gate G with Eric; V3 after G.
