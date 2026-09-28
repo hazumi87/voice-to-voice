@@ -2811,8 +2811,10 @@ def _voice_deliver_core(payload: dict, who: str):
                              "detail": "another delivery is in progress"}
     else:
         try:
+            _room.mark_speaking(device, _wav_seconds(wav) + _busy_wait)
             status, body = _push_to_device(dev, wav, expects_reply, VOICE_DELIVER_TIMEOUT_S,
                                            busy_wait=_busy_wait, reply_id=reply_id or None)
+            _room.mark_speaking(device, 0.0)     # playback returned (or failed): not speaking
         finally:
             lock.release()
     if if_idle and body.get("error") == "device_busy":
@@ -3081,6 +3083,14 @@ _room_memory = room_agent.RoomMemory(ROOM_MEMORY_PATH)
 _room = room_voice.RoomVoice(_room_engine, _room_state, _room_memory, _set_device_mode_quiet)
 
 
+def _wav_seconds(wav: bytes) -> float:
+    try:
+        info = sf.info(io.BytesIO(wav))
+        return float(info.frames) / float(info.samplerate or TTS_SR)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 def _silence_wav(ms: int = 120) -> bytes:
     y = np.zeros(int(TTS_SR * ms / 1000), dtype=np.float32)
     buf = io.BytesIO()
@@ -3143,6 +3153,8 @@ def _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf, sp
     else:
         wav = _silence_wav()
     t_tts = time.time()
+    # The bridge plays this WAV as soon as it lands: "speaking" for its duration (§9.2).
+    _room.mark_speaking(device, _wav_seconds(wav))
     print(f"[room-turn] dev={device} spk={spk_name or 'unknown'}({spk_conf:.2f}) "
           f"-> {route_label}:{res.outcome} | stt={int((t_stt - t0) * 1000)}ms "
           f"turn={int((t_eng - t_stt) * 1000)}ms tts={int((t_tts - t_eng) * 1000)}ms "

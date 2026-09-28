@@ -117,6 +117,11 @@ class EngineClient:
     def lines(self, room_id: str, q: str, limit: int = 5):
         return self._call("GET", f"/api/voice/rooms/{room_id}/lines", params={"q": q, "limit": limit})
 
+    def clear_waiting(self, room_id: str):
+        # E1c: POST /api/voice/rooms/:id/waiting {waiting:false} -> 200 {voice}. Called after
+        # "what's waiting" / "say that again" have been answered (followupTo clears it too).
+        return self._call("POST", f"/api/voice/rooms/{room_id}/waiting", {"waiting": False})
+
     def set_muted(self, channel_id: str, device: str, muted: bool):
         # Pinned by the lead (room-voice §15): POST /api/voice/rooms/:id/mute {muted} -> {voice}.
         # voice_engine.mute_path may override with a "{room}" placeholder.
@@ -466,6 +471,7 @@ class RoomVoice:
             if not ls.get("body"):
                 return TurnResult(_fmt("nothing_to_repeat"), "say_again")
             self.state.update(device, waiting=False)
+            self.engine.clear_waiting(room_id)
             return TurnResult(_fmt("say_again", author=_spoken_handle(ls.get("author"), st.get("lead")),
                                    body=ls["body"]), "say_again", expects_reply=True)
         if kind == "whats_waiting":
@@ -473,6 +479,7 @@ class RoomVoice:
             if status in (404, 409):
                 return self.self_heal(device, status)
             self.state.update(device, waiting=False)
+            self.engine.clear_waiting(room_id)
             if status != 200:
                 ls = st.get("lastSpoken") or {}
                 if ls.get("body"):
@@ -501,6 +508,13 @@ class RoomVoice:
                           lastReplyId=reply_id)
         self._push_exchange(device, {"kind": "out", "who": author or "voice", "text": body,
                                      "vid": reply_id or vid, "inReplyTo": vid})
+
+    def mark_speaking(self, device: str, seconds: float) -> None:
+        """§9.2: the one fact the engine lacks. Playback is synchronous on our side, so
+        'speaking' = now < speakingUntil; the panel's state route reads it."""
+        if not self.state.get(device).get("channelId"):
+            return
+        self.state.update(device, speakingUntil=time.time() + max(0.0, float(seconds)))
 
     EXCHANGES_KEEP = 10
 
