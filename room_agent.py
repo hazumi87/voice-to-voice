@@ -188,18 +188,24 @@ Pick exactly one action:
 
 "confidence" is your confidence in the action, 0 to 1. Reply with JSON only.
 
-Examples:
+Examples (from a DIFFERENT room with seats kade and mira; never reuse their names, numbers or words. Every "answer" you give must come from the ROOM SNAPSHOT below):
 "I'd like to add a hat to the character" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
-"tell aurora the button should say help" -> {"action":"relay","to":"aurora","answer":null,"confidence":0.95}
+"tell mira the button should say help" -> {"action":"relay","to":"mira","answer":null,"confidence":0.95}
 "message the lead that the logo is too big" -> {"action":"lead","to":null,"answer":null,"confidence":0.95}
-"is anyone working right now" -> {"action":"answer","to":null,"answer":"Yes, briefing-table is working; it posted 3 minutes ago.","confidence":0.9}
+"is anyone working right now" -> {"action":"answer","to":null,"answer":"Yes, kade is working; the last line was eleven minutes ago.","confidence":0.9}
 "add the blender tool to the room" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
 "can we make the intro shorter" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
 "the export is missing the timestamps" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
-"what tools are in the room" -> {"action":"answer","to":null,"answer":"Two tools: Voice and Tasks.","confidence":0.9}
-"remove aurora from the room" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
-"did the lead answer me yet" -> {"action":"answer","to":null,"answer":"Not yet. Your message from 20 minutes ago was acknowledged but has no result.","confidence":0.85}
+"what tools are in the room" -> {"action":"answer","to":null,"answer":"One tool: the Ledger panel.","confidence":0.9}
+"remove mira from the room" -> {"action":"lead","to":null,"answer":null,"confidence":0.9}
+"did the lead answer me yet" -> {"action":"answer","to":null,"answer":"Not yet. Kade acknowledged it but there is no result.","confidence":0.85}
 """
+
+# Words that only occur in the prompt's examples. An answer that contains one was copied
+# from the examples instead of read from the snapshot (measured against the E1 fixture:
+# "Yes, briefing-table is working; it posted 3 minutes ago." for a room with no such seat).
+_EXAMPLE_ONLY = ("kade", "mira", "eleven minutes", "ledger panel")
+_ANSWER_FALLBACK = "I can't tell that from the room right now."
 
 _LEAD_WORDS = {"lead", "the lead", "leader", "the leader", "team lead", "the team lead",
                "our lead", "my lead", "room lead", "the room lead"}
@@ -294,6 +300,9 @@ def route(text: str, context: dict, model: str = None, timeout: float = ROUTER_T
         if action == "relay":
             if not to or to.lower() in _LEAD_WORDS:
                 action, to = "lead", None
+        if action == "answer" and answer and any(w in answer.lower() for w in _EXAMPLE_ONLY):
+            out["note"] = "answer copied from the examples; replaced"
+            answer, conf = _ANSWER_FALLBACK, min(conf, 0.3)
         if action == "answer" and not answer:
             action = "lead"
         if action == "lead":

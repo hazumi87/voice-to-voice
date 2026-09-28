@@ -434,10 +434,10 @@ class RoomVoice:
             resolved = resp.get("resolved") or ""
             to = resp.get("to") or ""
             lead = st.get("lead") or (ctx.get("room") or {}).get("lead")
-            if action == "lead" or to == lead or resolved == "lead":
-                line = _fmt("relayed_lead")
-            elif resolved == "fallback-lead":
+            if resolved == "fallback-lead" and action == "relay":
                 line = _fmt("relayed_fallback", heard=dec["to"] or "them")
+            elif action == "lead" or to == lead or resolved == "lead":
+                line = _fmt("relayed_lead")
             else:
                 line = _fmt("relayed", name=_spoken_handle(to, lead))
             self.memory.append(room_id, sid, transcript, None, action)

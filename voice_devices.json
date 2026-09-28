@@ -7,6 +7,14 @@
       "announce_url": "http://127.0.0.1:8222/announce/echo-dot-biscuit",
       "room": "",
       "mode": "chat"
+    },
+    "fixture-dot": {
+      "kind": "fixture",
+      "adapter": "bridge",
+      "announce_url": "http://127.0.0.1:8294/announce/fixture-dot",
+      "room": "",
+      "mode": "chat",
+      "_comment": "room-voice test device: a fake bridge (tools/fake_bridge.py) that 'plays' silently. Used by the engine's scratch fixture (--v2v). Never a real speaker."
     }
   },
   "voice_mqtt": {
