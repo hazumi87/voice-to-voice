@@ -1,12 +1,19 @@
-/* voice_app / app.css — V2 room voice panel (vk-1826).
-   Tokens only. No hex literals anywhere in this file — every color is
-   var(--...) from the vendored tokens.css. Section labels use var(--display)
-   per the blueprint's §9 visual contract. */
+/* voice_app / app.css — V2 room voice panel (vk-1826, restyled to Aurora's
+   accepted mockup room-voice-v1, A0: http://100.110.14.59/styleguide/mockups
+   /room-voice-v1.html). Tokens only. No hex literals anywhere in this file —
+   every color is var(--...) from the vendored tokens.css.
+
+   This page IS the frame from that mockup's "the v2v frame (inside the
+   iframe: its own ground)" section — class names (.fr, .fr-top, .spk, .mute,
+   .disc, .exs, .ex, .ex .v/.q/.a/.wt) are carried over verbatim from Aurora's
+   markup so the two stay in lockstep. The host-owned status word, the device/
+   since line, and everything else in that mockup belongs to the room host,
+   not this frame, and is deliberately not reproduced here. */
 
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--surface);
+  background: var(--ink);
   color: var(--text);
 }
 
@@ -21,155 +28,226 @@ body {
   box-sizing: border-box;
 }
 
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px 12px;
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
-/* -- the frame's own "speaking" line. This is NOT the host's connected/
-   muted/waiting status word (that is host-drawn, per contract) -- it only
-   ever shows when the frame itself believes speech is in progress. */
-.status-row {
+/* ---------- the frame shell ---------- */
+.fr {
+  padding: 10px 14px 10px;
+  min-height: 96px;
+}
+
+.fr-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-family: var(--display);
-  font-size: 11px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--sky);
+  gap: 8px;
+  min-height: 28px;
 }
 
-.status-row[hidden] {
+/* connection state (device, since) -- blueprint sec9.5 lists this as frame
+   content. Empty (and so collapsed to its flex-basis, no visible gap) when
+   state.connected is false: the host draws the unreachable/disconnected
+   states, not this frame. */
+.dev {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev b {
+  font-weight: 500;
+}
+
+/* the frame's own "speaking" fact -- the ONLY status word the frame ever
+   draws. Never connected/muted/waiting: that status word is the host's. */
+.spk {
   display: none;
-}
-
-.status-row .glyph {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sky);
-}
-
-.empty-row {
-  font-size: 12px;
-  color: var(--dim);
-}
-
-.exchanges {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.exchange {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--surface2);
-}
-
-.exchange[role="button"] {
-  cursor: pointer;
-}
-
-.exchange[role="button"]:focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 1px;
-}
-
-.exchange .who {
-  font-family: var(--display);
-  font-size: 10px;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.exchange .text {
-  margin-top: 2px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text);
-}
-
-.exchange .vid {
-  margin-top: 4px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-}
-
-.actions {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 2px;
+  gap: 5px;
+  font: 500 11.5px var(--font);
+  color: var(--sky);
+  white-space: nowrap;
 }
 
-.btn-mute {
+.fr.speaking .spk {
+  display: inline-flex;
+}
+
+.spk i {
+  display: inline-block;
+  width: 2px;
+  height: 8px;
+  background: var(--sky);
+  border-radius: 1px;
+  animation: bob .9s ease-in-out infinite;
+}
+
+.spk i:nth-child(2) {
+  animation-delay: .15s;
+}
+
+.spk i:nth-child(3) {
+  animation-delay: .3s;
+}
+
+@keyframes bob {
+  0%, 100% { transform: scaleY(.5); }
+  50% { transform: scaleY(1.4); }
+}
+
+/* ---------- mute / disconnect ---------- */
+.mute {
+  width: 28px;
   height: 28px;
-  padding: 0 12px;
-  border-radius: 6px;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--border2);
-  background: transparent;
+  border-radius: 6px;
   color: var(--dim);
-  font-family: var(--font);
-  font-size: 12px;
-  cursor: pointer;
+  flex: none;
+}
+
+.mute svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.mute:hover {
+  color: var(--text);
+  background: var(--cap-hover);
 }
 
 /* muted (aria-pressed=true) is a chosen state, not a warning -- dim -> text,
-   never amber/coral. A muted-mic glyph rides in the button label text. */
-.btn-mute[aria-pressed="true"] {
+   never amber/coral. */
+.mute[aria-pressed="true"] {
   color: var(--text);
-  border-color: var(--text);
+  background: var(--surface3);
 }
 
-.btn-mute:disabled {
+.mute:disabled {
   opacity: .5;
   cursor: default;
 }
 
-.btn-mute:focus-visible {
+.disc {
+  font-size: 12px;
+  color: var(--teal);
+  padding: 4px 2px;
+}
+
+.disc:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.mute:focus-visible,
+.disc:focus-visible,
+.ex:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
 
-.btn-disconnect {
-  height: 28px;
-  padding: 0 2px;
-  border: none;
-  background: none;
-  color: var(--teal);
-  font-family: var(--font);
+@media (max-width: 420px) {
+  .mute {
+    width: 40px;
+    height: 40px;
+  }
+  .disc {
+    min-height: 40px;
+    padding: 0 6px;
+  }
+}
+
+/* ---------- exchanges ---------- */
+.empty-row {
   font-size: 12px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--dim);
+  padding: 5px 6px;
+}
+
+.exs {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ex {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  text-align: left;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ex:hover {
+  background: var(--cap-hover);
+}
+
+.ex[role="button"] {
   cursor: pointer;
 }
 
-.btn-disconnect:disabled {
-  opacity: .5;
-  cursor: default;
-  text-decoration: none;
-}
-
-.btn-disconnect:focus-visible {
+/* clicking an exchange outlines it in teal -- an outline, never a bar or a
+   background fill. Persists past the click (not just :focus-visible) so the
+   picked row stays legible after the host scrolls to it. */
+.ex.picked {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
 
-@media (max-width: 480px) {
-  .btn-mute,
-  .btn-disconnect {
-    height: 40px;
-  }
+.ex .v {
+  font: 400 10.5px var(--mono);
+  color: var(--dim);
+  padding-top: 1px;
+  white-space: nowrap;
+}
+
+.ex .q {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ex .a {
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* waiting is coral on the ONE waiting exchange (the most recent "out" row,
+   when state.waiting is true) -- and nowhere else. */
+.ex .a .wt {
+  color: var(--coral);
+}
+
+/* the fallback-lead note under an "in" exchange -- plain dim text, never
+   amber or coral. */
+.ex .nt {
+  grid-column: 2;
+  font-size: 11.5px;
+  color: var(--dim2);
+  margin-top: 1px;
 }

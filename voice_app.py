@@ -103,11 +103,14 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
             "since": None,
             "muted": False,
             "waiting": False,
+            "speaking": False,
             "exchanges": [],
             "serverTime": time.time(),
         }
     row = row or {}
     exchanges = list(row.get("exchanges") or [])[-EXCHANGES_KEEP:]
+    speaking_until = row.get("speakingUntil")
+    speaking = speaking_until is not None and time.time() < speaking_until
     return {
         "connected": True,
         "device": device_id,
@@ -116,6 +119,7 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
         "since": row.get("since"),
         "muted": bool(row.get("muted")),
         "waiting": bool(row.get("waiting")),
+        "speaking": speaking,
         "exchanges": exchanges,
         "serverTime": time.time(),
     }
@@ -124,7 +128,7 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Fixture: deterministic sample data, reachable without the engine or a real
 # device. /rooms/fixture/view?state=connected|disconnected&muted=0|1&
-# waiting=0|1&exchanges=0|1|3&long=1
+# waiting=0|1&exchanges=0|1|3&long=1&fallback=0|1&speaking=0|1
 # ---------------------------------------------------------------------------
 _FIXTURE_IN = [
     "What's the status on the north wing survey.",
@@ -169,6 +173,8 @@ def _fixture_state_payload(qp) -> dict:
     muted = _bool_q(qp, "muted", False)
     waiting = _bool_q(qp, "waiting", False)
     long_ = _bool_q(qp, "long", False)
+    fallback = _bool_q(qp, "fallback", False)
+    speaking = _bool_q(qp, "speaking", False)
     try:
         n = int(qp.get("exchanges", "3"))
     except (TypeError, ValueError):
@@ -182,8 +188,14 @@ def _fixture_state_payload(qp) -> dict:
     if connected:
         for i in range(n):
             t = now - (3 - i) * 40
-            exchanges.append({"t": t, "kind": "in", "who": "user",
-                               "text": ins[i], "lineId": "fx-in-%d" % i})
+            in_item = {"t": t, "kind": "in", "who": "user",
+                       "text": ins[i], "lineId": "fx-in-%d" % i}
+            if fallback and i == n - 1:
+                # Aurora's binding (room-voice-v1): the fallback-lead note
+                # rides an "in" exchange, plain --dim2 text, never amber/
+                # coral. The most recent question is the natural one to mark.
+                in_item["resolved"] = "fallback-lead"
+            exchanges.append(in_item)
             exchanges.append({"t": t + 5, "kind": "out", "who": "voice",
                                "text": outs[i], "vid": "V%d" % (100 + i),
                                "lineId": "fx-out-%d" % i})
@@ -191,12 +203,13 @@ def _fixture_state_payload(qp) -> dict:
 
     return {
         "connected": connected,
-        "device": "fixture-dot" if connected else None,
+        "device": "echo-dot-biscuit" if connected else None,
         "name": "North Wing Standup" if connected else None,
         "lead": "kade" if connected else None,
-        "since": (now - 300) if connected else None,
+        "since": (now - 20 * 60) if connected else None,
         "muted": muted,
         "waiting": waiting,
+        "speaking": speaking,
         "exchanges": exchanges,
         "serverTime": now,
     }
@@ -215,15 +228,14 @@ _PAGE_TEMPLATE = """<!doctype html>
 <link rel="stylesheet" href="../../assets/app.css">
 </head>
 <body>
-<div class="panel">
-  <div class="status-row" id="speakingRow" hidden>
-    <span class="glyph" aria-hidden="true"></span><span>Speaking</span>
+<div class="fr" id="frame">
+  <div class="fr-top">
+    <span class="dev" id="dev"></span>
+    <span class="spk" id="speakingRow"><i></i><i></i><i></i>Speaking</span>
+    <button id="muteBtn" class="mute" type="button" aria-pressed="false"></button>
+    <button id="disconnectBtn" class="disc" type="button">Disconnect</button>
   </div>
-  <ul class="exchanges" id="exchanges"></ul>
-  <div class="actions">
-    <button id="muteBtn" class="btn-mute" type="button" aria-pressed="false">Mute</button>
-    <button id="disconnectBtn" class="btn-disconnect" type="button">Disconnect</button>
-  </div>
+  <ul class="exs" id="exchanges"></ul>
 </div>
 <noscript>Enable scripts to use the voice panel.</noscript>
 <script id="initial-state" type="application/json">%(seed)s</script>
