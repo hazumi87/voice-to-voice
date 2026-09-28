@@ -389,9 +389,12 @@ class RoomVoice:
         # Speaker gate: the dev-turn floor, OR a sticky match on the speaker who opened this
         # connection (short questions on the Dot mic land at 0.3-0.5 for the same voice that
         # scored 0.75 on the connect line; the sticky session already vouches for them).
-        sticky_ok = (match == "sticky" and sid and sid == st.get("speaker")
-                     and conf >= STICKY_MIN_CONF)
-        if not sid or (conf < CONNECT_MIN_CONF and not sticky_ok):
+        # Measured at G: Eric's Dot-mic scores were 0.75 (connect), 0.54, 0.66, 0.58, 0.45; a
+        # hard 0.50 floor refused a correctly identified "who is the lead" at 0.45. Once the
+        # session vouches for a voice, that same sid is accepted down to the sticky floor
+        # whether speaker ID called it a full or a sticky match.
+        session_ok = bool(sid) and sid == st.get("speaker") and conf >= STICKY_MIN_CONF
+        if not sid or (conf < CONNECT_MIN_CONF and not session_ok):
             return TurnResult(_fmt("refused_speaker"), "refused_speaker")
 
         # 1. deterministic intents

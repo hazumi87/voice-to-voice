@@ -862,6 +862,30 @@
         "action": "answer"
       },
       "heldout": true
+    },
+    {
+      "id": "rq14",
+      "class": "room_question",
+      "text": "who is the lead in the room right now",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq15",
+      "class": "room_question",
+      "text": "who's here",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq16",
+      "class": "room_question",
+      "text": "who's working",
+      "expect": {
+        "action": "answer"
+      }
     }
   ],
   "non_sequiturs": {
@@ -1022,5 +1046,13 @@
         "intent": null
       }
     }
-  ]
+  ],
+  "identity": {
+    "note": "handled by server.py before the room path, only for an UNIDENTIFIED speaker",
+    "cases": [
+      "who am I",
+      "do you know who I am",
+      "do you recognize my voice"
+    ]
+  }
 }
