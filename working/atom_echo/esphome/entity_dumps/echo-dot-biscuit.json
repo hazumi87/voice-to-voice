@@ -1,0 +1,50 @@
+{
+  "device": "echo-dot-biscuit",
+  "ts": "2026-09-28T18:59:03Z",
+  "device_info": {
+    "name": "echomuse-lf0964130r0g",
+    "friendly_name": "Developer Voice Assistant",
+    "model": "Echo Dot Gen 2 (biscuit)",
+    "manufacturer": "EchoMuse",
+    "esphome_version": "",
+    "compilation_time": "",
+    "project_name": "EchoMuse.Echo Dot Gen 2 (biscuit)",
+    "project_version": "v2.24.1",
+    "voice_assistant_feature_flags": 61,
+    "mac_address": "02:EC:ED:96:20:94",
+    "suggested_area": ""
+  },
+  "entities": [
+    {
+      "type": "MediaPlayerInfo",
+      "name": "",
+      "object_id": "media_player",
+      "key": 1,
+      "icon": ""
+    },
+    {
+      "type": "EventInfo",
+      "name": "Action Button",
+      "object_id": "action_button",
+      "key": 2,
+      "icon": ""
+    }
+  ],
+  "services": [],
+  "voice_assistant_configuration": {
+    "available_wake_words": [
+      {
+        "id": "hey_jarvis_v0.1",
+        "wake_word": "hey jarvis",
+        "trained_languages": [
+          "en"
+        ]
+      }
+    ],
+    "active_wake_words": [
+      "hey_jarvis_v0.1"
+    ],
+    "max_active_wake_words": 1
+  },
+  "light_entities": []
+}

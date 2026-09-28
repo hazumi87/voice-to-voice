@@ -814,6 +814,7 @@ async def run_device(dev: dict, cfg: dict):
             await client.connect(on_stop=_on_stop, login=True)
             print(f"[{dev_id}] [api] connected to {addr}:{port}", flush=True)
             backoff = BACKOFF_MIN          # success resets the backoff
+            await _dump_entities(client, dev_id)   # room-voice V0: LED / wake-word evidence
             bridge = VoiceBridge(client, dev, cfg)
             client.subscribe_voice_assistant(
                 handle_start=bridge.handle_start,
@@ -838,6 +839,61 @@ async def run_device(dev: dict, cfg: dict):
                     await client.disconnect()
                 except Exception:  # noqa: BLE001
                     pass
+
+
+
+# --- room-voice V0 (vk-1819): entity dump ------------------------------------------
+# The Dot is an EchoMuse-emulated ESPHome satellite whose firmware we do not own. The
+# only way to know whether it exposes a drivable light (LED ring) or tells us its wake
+# phrase is to ask the API we already hold. Written once per connect to a STATIC file so
+# the answer is on disk for the room, not just in scrollback.
+ENTITY_DUMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entity_dumps")
+
+
+async def _dump_entities(client, dev_id: str) -> None:
+    out = {"device": dev_id, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    try:
+        info = await client.device_info()
+        out["device_info"] = {k: getattr(info, k, None) for k in (
+            "name", "friendly_name", "model", "manufacturer", "esphome_version",
+            "compilation_time", "project_name", "project_version", "voice_assistant_feature_flags",
+            "mac_address", "suggested_area")}
+    except Exception as e:  # noqa: BLE001
+        out["device_info_error"] = repr(e)
+    try:
+        entities, services = await client.list_entities_services()
+        out["entities"] = [{"type": type(ent).__name__, "name": getattr(ent, "name", None),
+                            "object_id": getattr(ent, "object_id", None),
+                            "key": getattr(ent, "key", None),
+                            "icon": getattr(ent, "icon", None)} for ent in entities]
+        out["services"] = [{"name": getattr(sv, "name", None),
+                            "args": [getattr(a, "name", None) for a in getattr(sv, "args", [])]}
+                           for sv in services]
+    except Exception as e:  # noqa: BLE001
+        out["entities_error"] = repr(e)
+    try:
+        # aioesphomeapi >= 24: wake-word configuration (available + active wake words).
+        vac = await client.get_voice_assistant_configuration(timeout=5.0)
+        out["voice_assistant_configuration"] = {
+            "available_wake_words": [{"id": w.id, "wake_word": w.wake_word,
+                                      "trained_languages": list(w.trained_languages)}
+                                     for w in getattr(vac, "available_wake_words", [])],
+            "active_wake_words": list(getattr(vac, "active_wake_words", [])),
+            "max_active_wake_words": getattr(vac, "max_active_wake_words", None)}
+    except Exception as e:  # noqa: BLE001
+        out["voice_assistant_configuration_error"] = repr(e)
+    lights = [e for e in out.get("entities", []) if "light" in (e["type"] or "").lower()]
+    out["light_entities"] = lights
+    try:
+        os.makedirs(ENTITY_DUMP_DIR, exist_ok=True)
+        path = os.path.join(ENTITY_DUMP_DIR, f"{dev_id}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=2, default=str)
+        print(f"[{dev_id}] [entities] {len(out.get('entities', []))} entities, "
+              f"{len(lights)} light(s), wake={out.get('voice_assistant_configuration', {}).get('active_wake_words')} "
+              f"-> {path}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[{dev_id}] [entities] dump failed: {e!r}", flush=True)
 
 
 async def main():
