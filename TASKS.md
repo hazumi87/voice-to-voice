@@ -195,3 +195,18 @@
 - V0 accepted by the lead (vk-1819 closed). Merged room-voice -> main twice (0a5f394, f53d6c3) under MERGE-LOCK
   announced in the room; v2v restarted each time in the §11 GPU order (router unloaded first).
 - Open: E1 fixture round trip when the engine posts "E1 FIXTURE READY"; live Dot gate G with Eric; V3 after G.
+
+## 2026-09-28T20:45:00Z — E1 round trips PASS, main 8bf8593 deployed
+- tools/room_voice_e1_trip.py (22/22) against the engine's scratch fixture (engine/room-voice-e1 @790da73):
+  connect/open/settings, answer + /said, relay 202 + vid, lead, fallback-lead, non-sequitur + followupTo,
+  context, waiting route, mute/unmute, lines, disconnect, reconnect remembers, external close -> self-heal.
+- tools/room_voice_e1_deliver.py (12/12) with the fixture's --v2v at the real v2v and tools/fake_bridge.py as
+  device fixture-dot: ack (start_conversation=0), result (start_conversation=1, replyId = vid, busy_wait=8),
+  overCap summarize played, device busy -> 8 s wait -> 409 -> engine chat-only device_busy, muted -> no
+  deliver, not-connected after disconnect. The 120 s no-ack notice arrived as kind notice + ifIdle.
+- Router: example answers use fictional seats and a guard replaces copied example text; an explicit
+  addressee always wins over "answer"; fallback line now says the miss. Harness 85/85, p90 0.36 s.
+- Lesson: a Bash call that cd'd into F:\code\briefing-table raised a permission prompt; use git -C from the
+  project cwd, one command per call for foreign repos, worktrees under F:\tmp.
+- Hazard: the server rewrites voice_devices.json (mode flips), which blocks `git checkout` mid-merge;
+  restore the file (all devices chat) before switching branches.
