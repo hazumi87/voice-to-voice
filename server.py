@@ -3341,6 +3341,10 @@ def _voice_mqtt_thread():
 threading.Thread(target=_voice_mqtt_thread, name="voice-mqtt", daemon=True).start()
 
 
+import voice_app
+voice_app.mount(app, lambda: _room_state, _voice_devices)
+
+
 # Static front-end (mounted last so /api/* wins).
 @app.get("/")
 def index():

@@ -1,0 +1,175 @@
+/* voice_app / app.css — V2 room voice panel (vk-1826).
+   Tokens only. No hex literals anywhere in this file — every color is
+   var(--...) from the vendored tokens.css. Section labels use var(--display)
+   per the blueprint's §9 visual contract. */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+/* -- the frame's own "speaking" line. This is NOT the host's connected/
+   muted/waiting status word (that is host-drawn, per contract) -- it only
+   ever shows when the frame itself believes speech is in progress. */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--sky);
+}
+
+.status-row[hidden] {
+  display: none;
+}
+
+.status-row .glyph {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+}
+
+.empty-row {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.exchanges {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exchange {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--surface2);
+}
+
+.exchange[role="button"] {
+  cursor: pointer;
+}
+
+.exchange[role="button"]:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.exchange .who {
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.exchange .text {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.exchange .vid {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.btn-mute {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--dim);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* muted (aria-pressed=true) is a chosen state, not a warning -- dim -> text,
+   never amber/coral. A muted-mic glyph rides in the button label text. */
+.btn-mute[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.btn-mute:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.btn-mute:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.btn-disconnect {
+  height: 28px;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--teal);
+  font-family: var(--font);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.btn-disconnect:disabled {
+  opacity: .5;
+  cursor: default;
+  text-decoration: none;
+}
+
+.btn-disconnect:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .btn-mute,
+  .btn-disconnect {
+    height: 40px;
+  }
+}

@@ -1,0 +1,380 @@
+/* ============================================================================
+   Aurora — design tokens
+   The canonical token contract for all hazumi87 sites.
+
+   This file is the single source of truth for Aurora's palette, surfaces,
+   typography, and card-system geometry. Every consuming app links this file
+   (hazwebserver apps live-link /aurora/tokens.css; VRPC apps git-pull a copy).
+   Component CLASSES (.it, .btn, .fchip, …) are NOT here yet — they live in the
+   styleguide and may be promoted into aurora.css later. Tokens only, for now.
+
+   Edit tokens HERE. The styleguide reads them via <link>, so there is one
+   source — never re-declare these hexes anywhere else.
+   ============================================================================ */
+
+/* ---- THE TYPEFACES ARE PART OF THE SYSTEM, not a CDN link ----------------
+   Until 2026-08-08 this file NAMED Inter / Space Grotesk / JetBrains Mono but
+   shipped no @font-face for any of them — the styleguide resolved them from a
+   per-page Google Fonts <link>. Any consumer that vendored tokens.css received
+   three font names it could not resolve, and rendered the whole design language
+   in system fallbacks. harbor-window-host found this; briefing-table was in the
+   same position. Type is most of a UI's character, so this was not cosmetic.
+
+   All paths are RELATIVE so tokens.css is portable: it resolves identically at
+   /aurora/tokens.css (→ /aurora/fonts/) and inside a vendored bundle
+   (→ <bundle>/fonts/). NEVER make these absolute again.
+
+   These are VARIABLE fonts — ONE file per family covering a weight RANGE. Do
+   not add per-weight files; Google serves the same variable file for every
+   weight you request, so per-weight declarations would ship the identical
+   binary N times.
+
+   Selawik (MIT, microsoft/Selawik) is a metric-compatible Segoe UI substitute
+   used ONLY by --audio-font on audio-playback surfaces, so the Zune/Zegoe
+   lineage is authentic on non-Windows targets. It is NOT Aurora's system face.
+
+   Licences: Inter / Space Grotesk / JetBrains Mono are SIL Open Font License
+   1.1 (fonts/OFL-*.txt); Selawik is MIT (fonts/Selawik-LICENSE.txt).
+   Latin subset only — non-latin glyphs fall back per-glyph, as before.
+   ------------------------------------------------------------------------- */
+@font-face{font-family:"Inter";src:url("fonts/inter.woff2") format("woff2");font-weight:300 700;font-style:normal;font-display:swap;}
+@font-face{font-family:"Space Grotesk";src:url("fonts/spacegrotesk.woff2") format("woff2");font-weight:400 700;font-style:normal;font-display:swap;}
+@font-face{font-family:"JetBrains Mono";src:url("fonts/jetbrainsmono.woff2") format("woff2");font-weight:400 500;font-style:normal;font-display:swap;}
+
+@font-face{font-family:"Selawik";src:url("fonts/selawkl.woff2") format("woff2");font-weight:300;font-style:normal;font-display:swap;}
+@font-face{font-family:"Selawik";src:url("fonts/selawksl.woff2") format("woff2");font-weight:350;font-style:normal;font-display:swap;}
+@font-face{font-family:"Selawik";src:url("fonts/selawk.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap;}
+/* ---- scrollbars ------------------------------------------------------------
+   `*` carries the standard properties so every scroll container inherits them;
+   specificity 0 means any component that deliberately hides its scrollbar
+   (e.g. .hwb-scroll in the tab strip) still wins with a single class. */
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent;}
+
+/* WebKit/Blink fallback for engines predating standard scrollbar-color.
+   Track is TRANSPARENT on purpose: a painted track would introduce a band that
+   matches one surface and clashes with the other four. */
+::-webkit-scrollbar{width:var(--scroll-size);height:var(--scroll-size);}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-corner{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:calc(var(--scroll-size)/2);
+  border:2px solid transparent;background-clip:content-box;}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover);background-clip:content-box;}
+
+@font-face{font-family:"Selawik";src:url("fonts/selawksb.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap;}
+
+:root{
+  /* ---- THE DOCUMENT IS DARK, AND THE BROWSER HAS TO BE TOLD ----------------
+     Without this the UA paints its LIGHT widgets on our dark surfaces: a white
+     scrollbar thumb on a white track (invisible position — the bug that found
+     this), light form controls, light spinners, a white flash on first paint.
+
+     This was missing estate-wide, exactly like the @font-face gap: tokens.css
+     described a dark visual language but never declared one. Every consumer
+     inherited the default. */
+  color-scheme:dark;
+
+  /* ---- surfaces (dark, low-chroma) ---- */
+  --ink:#0C1014;          /* page background */
+  --nav:#121820;          /* side nav / chrome bars */
+  --surface:#161B22;      /* panel / card surface */
+  --surface2:#1d242d;     /* raised surface, toolbars */
+  --surface3:#222a34;     /* highest raised surface, tracks */
+  --border:#27303a;       /* hairline divider */
+  --border2:#323c49;      /* stronger border */
+  --text:#e9edf1;         /* primary text */
+  --dim:#8794a1;          /* secondary / muted text */
+  --dim2:#5a6672;         /* faint text — timestamps, inactive rows (Metro "muted" tier) */
+  --dim3:#3a434d;         /* ghost text — placeholders, disabled labels (Metro "ghost" tier) */
+
+  /* ---- accents (function colors) ---- */
+  --teal:#2DD4BF;
+  --sky:#38BDF8;
+  --indigo:#5B6CF0;
+  --magenta:#FF2D78;
+  --coral:#FF5C4D;
+  --amber:#FBBF24;
+  --lime:#C6F24E;
+
+  /* ---- scrollbars — named so 'too loud / too faint' is a one-line change ----
+     color-scheme:dark alone hands you the UA's dark scrollbar, which is correct
+     but not OURS. These pin it to the palette. Thumb sits at --dim2 rather than
+     a border tone because the job is POSITION-AT-A-GLANCE: it must read against
+     --ink AND --surface3, the darkest and lightest grounds we ship. */
+  --scroll-thumb:var(--dim2);
+  --scroll-thumb-hover:var(--dim);
+  --scroll-size:10px;
+
+  /* ghost-button fill — named so 'too faint?' is a ONE-line change here */
+  --ghost-fill:color-mix(in srgb,var(--surface2) 55%,transparent);
+  --ghost-fill-hover:var(--surface2);
+
+  /* ---- typography ---- */
+  --font:'Inter',system-ui,sans-serif;
+  --display:'Space Grotesk',var(--font);
+  --mono:'JetBrains Mono',monospace;
+
+  /* ---- audio-playback (Zune "Metro" adaptation — see KB 40b68ac35c57c88b) ---- */
+  /* Scoped face for audio surfaces ONLY; Inter backs the true-200 hero weight. */
+  --audio-font:'Selawik','Inter','Segoe UI',sans-serif;
+  /* motion — TWO speed bands. Ambient = slow+linear; transitions = fast+eased. */
+  /* pan RATE model (KB c954343c277ff8d0): author velocity, DERIVE duration.
+     duration = --pan-travel / (--pan-velocity * --motion-distance-scale) seconds,
+     computed by a JS shim. Transform authored in vmin so it's resolution-independent. */
+  --pan-velocity:0.9;                            /* %vmin/sec — "feel" knob. Raised from research's
+                                                    0.45 ("barely perceptible") to the earlier good
+                                                    rate; 0.45 read as imperceptible. */
+  --pan-travel:12;                               /* %vmin traversed (kept within the -8% overscan) */
+  --motion-distance-scale:1.0;                   /* deployment knob: 1.0 touch / 0.65 TV */
+  --pan-duration:13.3s;                          /* DERIVED (12/0.9); shim overwrites */
+  --pan-ease:linear;                             /* constant-velocity drift */
+  --pan-rotate:0deg;                             /* Metro is flat — no 3D tumble */
+  --pan-zoom:1.15;                               /* scale end (fixed across viewports) */
+  --artist-crossfade:1000ms;                     /* artist-photo dissolve (filmic) */
+  --artist-crossfade-ease:cubic-bezier(.4,0,.2,1);
+  --artist-dwell:12s;                            /* hold before next artist image */
+  --artist-kenburns:18s;                         /* slow push on the artist photo */
+  --metro-ease:cubic-bezier(0.13,0.71,0.28,1);   /* THE canonical transition curve */
+  --metro-ease-in:cubic-bezier(0.7,0,0.84,0);    /* exits only */
+  --title-in:700ms;--title-slide:130px;--title-stagger:140ms;  /* IN: turnstile, bottom-to-top — slowed so the wipe is clearly perceptible */
+  --text-out-duration:500ms;--text-out-slide:90px;            /* OUT: down+fade — must VISIBLY complete before IN starts */
+  --text-out-ease:cubic-bezier(0.4,0,0.7,1);                  /* front-loaded-ish so the fall is visible early, not a late yank */
+  --cover-in:400ms;                              /* new cover scale-up+fade */
+  --bar-reveal:250ms;--bar-rise:8px;             /* playback bar: fast in */
+  --bar-hide-delay:2000ms;--bar-hide:400ms;      /* slower out */
+
+  /* ---- Part 3 §B: control auto-fade to clean state (idle stage 1) ---- */
+  /* ONE timer drives all idling: after this delay of no interaction the chrome fades to
+     the clean art+text state. Every TRACK CHANGE also wakes the viewer (reveals chrome:
+     bar + Up Next — the "MTV" track-info affordance) then re-idles after this SAME delay.
+     So a no-interaction viewer (TV/appliance/full-screen listening) gets a periodic
+     glimpse of track length + Up Next each song. Tune per device class. */
+  --controls-idle-timeout:10000ms;
+  --controls-fade-out:600ms;        /* slow, unhurried departure */
+  --controls-fade-in:250ms;         /* fast return on any input */
+
+  /* ---- Part 3 §C: idle screensaver (idle stage 2 — restrained depth, HERE ONLY) ---- */
+  --screensaver-timeout:60000ms;    /* idle time in clean state before screensaver */
+  --screensaver-fade-in:1500ms;     /* slow, filmic entry */
+  --screensaver-exit:400ms;         /* quick, responsive exit on any input */
+  --ss-perspective:1200px;          /* screensaver container only — never on the player */
+  --ss-text-opacity:0.8;
+  --ss-text-drift:7s;               /* one horizontal sweep per lane — fast enough to read */
+  --ss-text-angle:6deg;
+  --ss-art-drift:9s;                /* cover/bg lane speed base */
+  --ss-art-rotate:8deg;             /* gentle axis tilt — the one place rotation is allowed */
+
+  /* ---- remote / D-pad focus ring (vk-1138) ---- */
+  --ring:var(--teal);             /* nav accent — ring function is NAVIGATION, one color */
+  --ring-w:3px;                   /* card-level ring width */
+  --ring-offset:2px;              /* card-level outline-offset */
+  --ring-feature-w:2px;           /* feature-level (inside-card) ring width */
+  --ring-feature-offset:1px;      /* feature-level outline-offset */
+  --ring-glow:0 0 22px -4px var(--teal);  /* card-level ambient glow */
+  --ring-summon:250ms;            /* first-appear / return from hidden */
+  --ring-move:180ms;              /* card-to-card repositional */
+  --ring-hide:400ms;              /* fade to hidden */
+
+  /* ---- phone flyover nav (vk-1182) ---- */
+  /* On phone-class devices the shell nav opens as a FLYOVER drawer OVER the
+     stage — the stage does NOT inset or scale (contrast desktop, where
+     body.menu shifts #player-root under the bar/right of the rail). These
+     tokens size and time that drawer + its scrim. Phone-only: gated behind
+     the web-phone media query in the contract; inert on desktop/kiosk. */
+  --drawer-w:min(86vw,340px);     /* flyover drawer width — capped so a wide phone
+                                     (landscape/foldable) never gets a full-bleed panel */
+  --drawer-t:300ms;               /* drawer slide in/out — quicker than the desktop
+                                     --shell-t 460ms; a phone drawer is a lighter gesture */
+  --scrim:rgba(6,9,12,.55);       /* flyover dim behind the drawer — matches Aurora's
+                                     modal-scrim tone (index.html .modal-scrim / .filterstage .scrim) */
+  --scrim-blur:3px;               /* backdrop-filter blur on the scrim — same as modals */
+  --z-scrim:44;                   /* flyover scrim tier (over stage, under drawer) —
+                                     aligns with HearthOS .stage-dim z-index:44 */
+  --z-drawer:46;                  /* flyover drawer tier — over scrim, at/above the
+                                     hamburger corner (HearthOS .corner z-index:46) */
+
+  /* ---- trim scrubber (video in/out range selector — vk-1257) ---- */
+  /* A large horizontal range control: full-clip TRACK with two inward-dragging
+     handles (START from left, END from right) bounding a SELECTED range; the
+     regions outside the range are EXCLUDED (dimmed). A separate PLAYHEAD marks
+     live playback/seek position and is visually distinct from the two handles.
+     Function-color rule holds: the selected range is TEAL (the primary,
+     "this is what you keep" action-state). Excluded = neutral wash, NOT a
+     function color. Handles carry the teal. Playhead is AMBER (a transient
+     position marker — a different function than the boundary handles, so a
+     different color; never teal, so it can never be mistaken for a handle). */
+  --trim-track-h:10px;            /* the base rail thickness (excluded regions) */
+  --trim-range-h:14px;            /* selected-range band — slightly taller than the rail so it reads as raised */
+  --trim-track-r:3px;             /* rail/range corner radius — softer than --corner; this is a control, not a shell */
+  --trim-track-bg:var(--surface3);            /* excluded/base rail fill */
+  --trim-range-bg:color-mix(in srgb,var(--teal) 22%,var(--surface3));  /* selected band fill (teal-tinted) */
+  --trim-range-edge:var(--teal);              /* selected band top/bottom hairline + the "keep" accent */
+  --trim-excluded-wash:color-mix(in srgb,var(--ink) 55%,transparent);  /* overlay dimming the trimmed-off head/tail on the FILMSTRIP */
+  --trim-handle-w:14px;           /* handle stem visual width */
+  --trim-handle-hit:44px;         /* min pointer/touch hit target around a handle (WCAG 2.5.5 / mouse comfort) */
+  --trim-handle-h:36px;           /* handle grip height (extends above+below the rail) */
+  --trim-handle-r:4px;            /* handle grip corner radius */
+  --trim-handle-bg:var(--teal);               /* handle grip fill */
+  --trim-handle-grip:color-mix(in srgb,var(--ink) 65%,transparent);    /* the knurl lines on the grip */
+  --trim-handle-ring:0 0 0 3px color-mix(in srgb,var(--teal) 40%,transparent);  /* focus/drag ring around a handle */
+  --trim-playhead-w:2px;          /* playhead line thickness */
+  --trim-playhead:var(--amber);               /* playhead color — DISTINCT from handles (see note above) */
+  --trim-playhead-glow:0 0 8px -1px var(--amber);
+  --trim-rail-min:520px;          /* min rail width before the host page allows horizontal scroll — "wide enough to slide accurately on long clips" */
+  --trim-drag-t:90ms;             /* handle settle transition when NOT dragging (nudge/keyboard); drag itself is 0s = 1:1 with pointer */
+  --trim-drag-ease:cubic-bezier(0.13,0.71,0.28,1);  /* the canonical --metro-ease, restated locally */
+
+  /* ---- job progress (two-level: step track + within-step %, long-running poll — vk-1258) ---- */
+  /* Sibling of the trim scrubber: after "Send to processing", a long multi-stage
+     job (normalize ~57m + optical-flow profile ~52m for a 64-min clip) needs to
+     read as ALIVE and LEGIBLE, not stalled. Two levels: (1) a SEGMENTED STEP TRACK
+     of the discrete heavy stages, and (2) a WITHIN-STEP fill + % for the active one.
+     Plus a rolling ETA and a pre-start estimate.
+     COLOR = FUNCTION (the whole aurora rule):
+       • in-progress / active work = SKY (info/processing — same function as the
+         existing determinate bar and the "Processing" status badge).
+       • COMPLETE = TEAL (the "done/kept/success" function — same teal as a kept
+         trim range and an "Active" status badge). So complete ≠ in-progress by
+         COLOR (teal vs sky), answering "is in-progress a different function than
+         complete?" — YES.
+       • pending = neutral track, NO function color (nothing has happened yet).
+       • error = MAGENTA (the failure function everywhere in aurora).
+       • ETA / estimate text = neutral --dim (it is information, not a state). */
+  --jp-track-h:10px;              /* the within-step fill bar thickness (matches --trim-track-h family) */
+  --jp-track-r:5px;               /* fill bar corner radius — pill-ish, a control not a shell */
+  --jp-track-bg:var(--surface3);              /* unfilled portion of the within-step bar + pending segments */
+  --jp-fill:var(--sky);                       /* within-step fill = ACTIVE/processing function color */
+  --jp-fill-soft:color-mix(in srgb,var(--sky) 20%,var(--surface3));  /* faint sky wash under the moving sheen */
+  --jp-done:var(--teal);                      /* a COMPLETED step's segment + check = success function */
+  --jp-done-soft:color-mix(in srgb,var(--teal) 22%,var(--surface3)); /* completed-segment fill on the step track */
+  --jp-error:var(--magenta);                  /* terminal error function color */
+  --jp-error-soft:color-mix(in srgb,var(--magenta) 12%,var(--surface2));
+  --jp-pending:var(--dim3);                   /* pending segment tint (ghost tier) */
+  --jp-seg-h:8px;                             /* segmented STEP-TRACK bar height (the |==|--| row) */
+  --jp-seg-gap:4px;                           /* gap between step segments so the discrete stages read */
+  --jp-seg-r:3px;                             /* step-segment corner radius */
+  /* the "still alive" affordance: even when a poll returns the SAME step_pct for
+     minutes (the long normalize), an indeterminate SHEEN sweeps the active fill so
+     the bar never looks frozen. Slow + linear = ambient, not a spinner. */
+  --jp-sheen:color-mix(in srgb,#fff 14%,transparent);  /* the moving highlight over the active fill */
+  --jp-sheen-t:2.2s;              /* one sheen sweep — slow enough to read as "working", not "loading" */
+  --jp-fill-t:600ms;              /* width ease when step_pct JUMPS on a poll (stepped, not smooth) */
+  --jp-fill-ease:cubic-bezier(0.22,0.61,0.36,1);  /* decelerate into the new poll value */
+  --jp-pulse-t:1.6s;              /* active-segment breathing pulse when step_pct is static */
+
+  /* ---- clip editor — unified audio/video cut-and-remove timeline (vk-1545) ---- */
+  /* The Asset Library Clip Editor (AGREED PLAN, KB f287e1c71963b74b §3). Sibling of
+     the trim scrubber: same three functions carry colour and NOTHING else does.
+       • keep      = TEAL   — a kept segment / join is the OUTPUT (same function as the
+                              trim-scrub selected range).
+       • selection = SKY    — a range awaiting a verb: active / pending, the same
+                              function as job in-progress. Never teal: not yet kept.
+       • playhead  = AMBER  — the one position marker (it is also the cursor); never a
+                              handle colour, so it can't be grabbed by mistake.
+       • removed   = NEUTRAL wash + hatch — removal is the ABSENCE of keep and is
+                              restorable; it must never read as an error.
+       • cut mark / hover = NEUTRAL hairlines — a boundary has no function.
+       • clip (error) = MAGENTA — clipped samples inside KEPT audio, render failure.
+     Verbs (Remove/Split/Keep only/Restore) are neutral-strong buttons; the only
+     accented button on the page is Create clip (.btn.primary). */
+  --ce-keep:var(--teal);                                                  /* kept segment outline, handles, join wedges */
+  --ce-keep-soft:color-mix(in srgb,var(--teal) 16%,transparent);          /* kept segment fill */
+  --ce-sel:var(--sky);                                                    /* selection edges + readout */
+  --ce-sel-soft:color-mix(in srgb,var(--sky) 18%,transparent);            /* selection fill over the signal */
+  --ce-playhead:var(--trim-playhead);                                     /* = amber; 2px + caret + --trim-playhead-glow */
+  --ce-removed-wash:color-mix(in srgb,var(--ink) 62%,transparent);        /* dims the signal under a removed range */
+  --ce-removed-hatch:repeating-linear-gradient(-45deg,transparent 0 5px,color-mix(in srgb,var(--dim2) 55%,transparent) 5px 6px);
+  --ce-wave:color-mix(in srgb,var(--text) 78%,var(--teal));               /* waveform ink (kept) */
+  --ce-wave-removed:var(--dim3);                                          /* waveform ink under a removed range */
+  --ce-cut:var(--dim);                                                    /* cut mark: 1px dashed + ✂ tick */
+  --ce-hover:var(--dim2);                                                 /* hover hairline + fixed-width readout */
+  --ce-clip:var(--magenta);                                               /* clipped samples in KEPT audio; render failure */
+  --ce-lane-h:28px;                                                       /* the edit lane under the signal (and each compact lane) */
+  --ce-handle-hit:var(--trim-handle-hit);                                 /* 44px */
+  --ce-handle-w:8px;--ce-handle-h:22px;                                   /* grip, smaller than the trim scrubber's (it sits in a 28px lane) */
+  --ce-overview-h:56px;                                                   /* Align-style whole-clip strip */
+  --ce-join-w:10px;                                                       /* crossfade wedge width at default zoom (scales with fade length when zoomed in) */
+
+  /* ---- Windows caption cells (frameless WebView2 window host — vk-1480) ---- */
+  /* The three caption cells (min/max/close) are shared by BOTH window types the
+     harbor-window-host draws — solo CLI windows and the CLI Manager — so these are
+     CONTRACT values, not local styling. The neutral washes are white-alpha, NOT
+     palette: a caption cell must never wear a function color, or it starts to look
+     like it means something. NO transition on any of these — the system's caption
+     hover is instant, and a fade reads as lag beside a real Explorer window on the
+     same desktop. */
+  --cap-hover:rgba(255,255,255,.10);   /* min/max hover fill — WinUI SubtleFillColorSecondary tier */
+  --cap-press:rgba(255,255,255,.06);   /* min/max pressed fill — SubtleFillColorTertiary tier */
+  --cap-close-hover:#C42B1C;           /* Windows 11 Fluent close-hover red. A PLATFORM CONSTANT,
+                                          not an Aurora accent — matching the OS here is a
+                                          correctness requirement, and a --coral derivation is
+                                          measurably warmer beside a native window. Used for the
+                                          window close cell and NOTHING else. */
+
+  /* ---- CLI activity state (agent session liveness — vk-1480) ---- */
+  /* Six states, ZERO new hexes: every one is an ALIAS onto an existing function
+     token, so the language gains NAMES, not paint. Same move as hearthos.html's
+     --cat-* set. Used in the window titlebar AND in the Manager's session-list rows,
+     which is why they are tokens and not component-local. */
+  --act-attention:var(--coral);    /* waiting-on-question — inherits .fieldlbl .req + .btn.primary:
+                                      "your input is required before anything proceeds" */
+  --act-severed:var(--magenta);    /* disconnected — inherits --jp-error / .badge.status-err */
+  --act-streaming:var(--sky);      /* producing output — inherits --jp-fill (in-progress/active) */
+  --act-watch:var(--sky);          /* deliberate poll/hold cycle. SAME FUNCTION as streaming
+                                      ("alive, self-resuming, needs nothing from you"), so same
+                                      color — differentiated by FORM (hollow ring) not hue. Named
+                                      apart so it can diverge in one line; --indigo is the fallback. */
+  --act-idle:var(--dim3);          /* nothing happening — inherits --jp-pending: pending is NEUTRAL */
+  --act-ended:var(--dim2);         /* process gone. Muted tier — deliberately ONE STEP LOUDER than
+                                      idle's ghost tier, because an ended window holds an unresolved
+                                      decision (relaunch or close) while an idle one holds nothing. */
+  --act-ended-ok:var(--teal);      /* exit-0 verdict — a 40%-mix SEAM only, never the pip: painting
+                                      dead windows teal would make corpses louder than live ones */
+  --act-ended-fail:var(--magenta); /* non-zero exit verdict — same seam-only rule */
+  /* ---- workroom manila (WR1-B plate + F1 folder-chat tab) — a PAPER colour, ~50° from
+     Claude's hue so never a brand; categorisation of "this is the room", not a function.
+     Plate values moved verbatim from hwb-ring.css (v24); F1 stops from workroom-nav-v2. ---- */
+  --wr-manila:oklch(.77 .067 86);        /* folder body / the room's base */
+  --wr-manila-edge:oklch(.62 .07 80);    /* folder keyline */
+  --wr-manila-ear:oklch(.68 .075 80);    /* the darker ear */
+  --wr-tab-top:oklch(.52 .055 86);       /* F1 unselected wash, top */
+  --wr-tab-bot:oklch(.43 .048 82);       /* F1 unselected wash, bottom */
+  --wr-tab-on-top:oklch(.72 .068 87);    /* F1 selected wash, top */
+  --wr-tab-on-bot:oklch(.58 .06 82);     /* F1 selected wash, bottom */
+  --wr-tab-ink:oklch(.9 .02 84);         /* F1 label on the darker (unselected) wash */
+  --wr-tab-ink-on:oklch(.16 .03 70);     /* F1 label on the light (selected) wash */
+  /* ---- MCP indicator (v27): one alias per result, so the palette is a one-token swap.
+     P1 (ruled default) = the chrome's own finished-process verdict colours.
+     P2 (Showcase-literal) would be --mcp-ok:var(--lime); --mcp-err:var(--coral). ---- */
+  --mcp-out:var(--sky);      /* going out / running: processing */
+  --mcp-ok:var(--teal);      /* came back ok (= --act-ended-ok) */
+  --mcp-warn:var(--amber);   /* came back with a warning */
+  --mcp-err:var(--magenta);  /* rejected / error (= --act-ended-fail) */
+  --mcp-none:var(--dim2);    /* no end signal: never claimed as success */
+  --lead-gold:oklch(.74 .12 95);   /* B5 primary-agent badge (ruled 2026-09-19): the brand plate's OUTLINE.
+                                      An OLD gold — lower lightness + chroma than --amber — so the lead
+                                      never reads as the amber restorable state. A MARK, not a state:
+                                      only ever a plate outline, never a fill, pill or card border. */
+
+  /* ---- per-window identity accents (categorisation, NOT function — vk-1480) ---- */
+  /* PROMOTED VERBATIM from the styleguide's own extended palette (index.html:2873-4,
+     EXT_DISTINCT + EXT_INBETWEEN) per its stated adoption path. A per-window identity
+     tint answers "WHICH window is this" — that is CATEGORISATION, which is exactly what
+     the extended palette is for (index.html:975). Drawing identity from the 7 function
+     accents would be the color=function rule read backwards, and it is what manufactures
+     the identity-vs-state collision. FIVE is the honest ceiling: these five + the function
+     seven = 12 occupied hues, and the wheel holds ~10 cleanly-distinct / ~12 pushing it.
+     The one remaining Δ>=30 gap is ~h105. */
+  --id-green:#45D379;    /* h142 · Δ31 to teal    */
+  --id-violet:#A96CEF;   /* h268 · Δ35 to indigo  */
+  --id-orchid:#E967E9;   /* h300 · Δ39 to magenta */
+  --id-orange:#FA9338;   /* h28  · Δ15 to amber   */
+  --id-cobalt:#428DF0;   /* h214 · Δ15 to sky     */
+
+  /* ---- card system (plate ring + face + glow + spine + reflection) ---- */
+  --plate-L1:40;--plate-L2:7;--plate-L3:2;   /* plate gradient tones (HSL L%) */
+  --rim:2px;                                  /* plate ring width */
+  --spine-overhang:1px;                       /* selection accent overhang past the rim; painted spine = --rim + --spine-overhang */
+  --corner:2px;                               /* THE shell corner radius — Zune-sharp; one radius across cards/panes/rail-tiles/modals/toasts (HearthOS R2) */
+  --glow-distance:5px;--glow-diffuse:18px;    /* selected glow offset + blur */
+  --reflect-mix:80;                           /* reflection lean toward source accent (%) */
+}
