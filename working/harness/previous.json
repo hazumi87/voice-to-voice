@@ -1,10 +1,10 @@
 {
  "summary": {
   "model": "llama3.2:3b",
-  "ts": "2026-09-28T19:37:24Z",
-  "n": 73,
-  "correct": 73,
-  "accuracy": 1.0,
+  "ts": "2026-09-28T20:12:28Z",
+  "n": 85,
+  "correct": 83,
+  "accuracy": 0.9765,
   "by_class": {
    "implicit_relay": {
     "n": 13,
@@ -13,8 +13,8 @@
    },
    "explicit_relay": {
     "n": 12,
-    "ok": 12,
-    "accuracy": 1.0
+    "ok": 11,
+    "accuracy": 0.917
    },
    "lead_explicit": {
     "n": 10,
@@ -33,17 +33,27 @@
    },
    "misheard": {
     "n": 12,
+    "ok": 11,
+    "accuracy": 0.917
+   },
+   "heldout": {
+    "n": 12,
     "ok": 12,
     "accuracy": 1.0
    }
   },
+  "tuned_n": 73,
+  "tuned_correct": 71,
+  "heldout_n": 12,
+  "heldout_correct": 12,
+  "heldout_accuracy": 1.0,
   "forbidden_n": 13,
   "forbidden_to_lead": 13,
   "forbidden_rate": 1.0,
   "stt_cases": 28,
   "parse_failures": 0,
-  "latency_p50_s": 0.497,
-  "latency_p90_s": 0.607,
+  "latency_p50_s": 0.31,
+  "latency_p90_s": 0.385,
   "non_sequitur_failures": [],
   "intent_failures": [],
   "gates": {
@@ -53,7 +63,7 @@
    "non_sequitur_100": true,
    "intents_100": true
   },
-  "gpu_note": "GPU shared with Krea at 100%; latency not representative; STT audio from cache"
+  "gpu_note": "after anti-leak examples; STT from cache; Krea state unknown"
  },
  "results": [
   {
@@ -71,7 +81,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.615,
+   "latency_s": 0.608,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -91,7 +101,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.49,
+   "latency_s": 0.277,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -111,7 +121,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.434,
+   "latency_s": 0.293,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -131,7 +141,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.422,
+   "latency_s": 0.286,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -151,7 +161,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.445,
+   "latency_s": 0.251,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -171,7 +181,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.411,
+   "latency_s": 0.296,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -191,7 +201,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.443,
+   "latency_s": 0.32,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -211,7 +221,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.454,
+   "latency_s": 0.242,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -231,7 +241,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.463,
+   "latency_s": 0.308,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -251,7 +261,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.497,
+   "latency_s": 0.283,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -271,7 +281,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.465,
+   "latency_s": 0.315,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -291,7 +301,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.432,
+   "latency_s": 0.303,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -311,7 +321,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.456,
+   "latency_s": 0.309,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -332,7 +342,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.512,
+   "latency_s": 0.301,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -353,8 +363,8 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.51,
-   "eval_count": 22,
+   "latency_s": 0.266,
+   "eval_count": 20,
    "ok": true,
    "why": ""
   },
@@ -368,16 +378,16 @@
     "action": "relay",
     "to_contains": "vrpc"
    },
-   "action": "relay",
-   "to": "vrpc briefing table",
-   "answer": null,
-   "confidence": 0.95,
+   "action": "answer",
+   "to": "vrpc-briefing-table",
+   "answer": "Yes, the Windows build passed.",
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.546,
-   "eval_count": 25,
-   "ok": true,
-   "why": ""
+   "latency_s": 0.363,
+   "eval_count": 30,
+   "ok": false,
+   "why": "action answer not in ['relay']"
   },
   {
    "id": "er04",
@@ -395,7 +405,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.483,
+   "latency_s": 0.275,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -416,7 +426,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.535,
+   "latency_s": 0.293,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -437,7 +447,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.463,
+   "latency_s": 0.293,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -458,7 +468,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.501,
+   "latency_s": 0.318,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -479,7 +489,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.501,
+   "latency_s": 0.315,
    "eval_count": 21,
    "ok": true,
    "why": ""
@@ -500,7 +510,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.549,
+   "latency_s": 0.323,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -521,7 +531,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.529,
+   "latency_s": 0.314,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -542,7 +552,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.497,
+   "latency_s": 0.306,
    "eval_count": 19,
    "ok": true,
    "why": ""
@@ -563,7 +573,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.529,
+   "latency_s": 0.333,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -583,7 +593,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.502,
+   "latency_s": 0.269,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -603,7 +613,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.476,
+   "latency_s": 0.263,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -623,7 +633,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.444,
+   "latency_s": 0.286,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -643,7 +653,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.493,
+   "latency_s": 0.289,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -667,7 +677,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.53,
+   "latency_s": 0.29,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -687,8 +697,8 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.462,
-   "eval_count": 22,
+   "latency_s": 0.299,
+   "eval_count": 20,
    "ok": true,
    "why": ""
   },
@@ -707,7 +717,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.469,
+   "latency_s": 0.276,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -731,7 +741,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.513,
+   "latency_s": 0.307,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -751,12 +761,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "No one is currently blocked in the room.",
+   "answer": "No one is blocked in the room.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.612,
-   "eval_count": 27,
+   "latency_s": 0.317,
+   "eval_count": 26,
    "ok": true,
    "why": ""
   },
@@ -775,7 +785,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.496,
+   "latency_s": 0.291,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -791,12 +801,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Yes, briefing-table is working; it posted 3 minutes ago.",
+   "answer": "Yes, aurora is idle; the last line was 1 hour ago.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.639,
-   "eval_count": 32,
+   "latency_s": 0.319,
+   "eval_count": 34,
    "ok": true,
    "why": ""
   },
@@ -811,12 +821,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Not yet. Your message from 20 minutes ago was acknowledged but has no result.",
-   "confidence": 0.85,
+   "answer": "I can't tell that from the room right now.",
+   "confidence": 0.3,
    "parse_ok": true,
-   "note": null,
-   "latency_s": 0.691,
-   "eval_count": 35,
+   "note": "answer copied from the examples; replaced",
+   "latency_s": 0.368,
+   "eval_count": 31,
    "ok": true,
    "why": ""
   },
@@ -831,12 +841,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Yes, briefing-table is working; it posted 3 minutes ago.",
-   "confidence": 0.9,
+   "answer": "I can't tell that from the room right now.",
+   "confidence": 0.3,
    "parse_ok": true,
-   "note": null,
-   "latency_s": 0.646,
-   "eval_count": 32,
+   "note": "answer copied from the examples; replaced",
+   "latency_s": 0.336,
+   "eval_count": 33,
    "ok": true,
    "why": ""
   },
@@ -851,11 +861,11 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Two tools: Voice and Tasks.",
+   "answer": "One tool: the Voice panel.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.489,
+   "latency_s": 0.319,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -871,12 +881,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "The lead, briefing-table, said \"Message received, working on the hat.\" (19 minutes ago).",
-   "confidence": 0.9,
+   "answer": "The lead, briefing table, said \"Message received, working on the hat.\".",
+   "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.707,
-   "eval_count": 40,
+   "latency_s": 0.366,
+   "eval_count": 33,
    "ok": true,
    "why": ""
   },
@@ -891,12 +901,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Aurora posted 1 hour ago.",
+   "answer": "One hour ago.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.607,
-   "eval_count": 27,
+   "latency_s": 0.301,
+   "eval_count": 22,
    "ok": true,
    "why": ""
   },
@@ -911,12 +921,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Yes, aurora-design is idle in the room.",
+   "answer": "Yes, aurora is working; the last line was one hour ago.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.592,
-   "eval_count": 29,
+   "latency_s": 0.404,
+   "eval_count": 33,
    "ok": true,
    "why": ""
   },
@@ -935,7 +945,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.554,
+   "latency_s": 0.324,
    "eval_count": 27,
    "ok": true,
    "why": ""
@@ -951,12 +961,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Yes, you have a message from briefing-table, sent 20 minutes ago.",
+   "answer": "Yes, you have a message from the device echo-dot-biscuit, sent 20 minutes ago.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.616,
-   "eval_count": 34,
+   "latency_s": 0.385,
+   "eval_count": 39,
    "ok": true,
    "why": ""
   },
@@ -971,12 +981,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "briefing-table",
+   "answer": "The lead is the briefing table.",
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.461,
-   "eval_count": 20,
+   "latency_s": 0.321,
+   "eval_count": 23,
    "ok": true,
    "why": ""
   },
@@ -991,12 +1001,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Vrpc briefing table said \"Mockup v1 posted at 1440 and 390.\" (1 hour ago).",
-   "confidence": 0.9,
+   "answer": "The vrpc-briefing-table said nothing.",
+   "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.795,
-   "eval_count": 43,
+   "latency_s": 0.341,
+   "eval_count": 27,
    "ok": true,
    "why": ""
   },
@@ -1012,11 +1022,11 @@
    "action": "answer",
    "to": null,
    "answer": "There are three seats in the room.",
-   "confidence": 0.9,
+   "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.52,
-   "eval_count": 26,
+   "latency_s": 0.348,
+   "eval_count": 24,
    "ok": true,
    "why": ""
   },
@@ -1031,12 +1041,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Yes, briefing-table has acknowledged your message.",
+   "answer": "Yes, Eric was acknowledged by the briefing table.",
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.54,
-   "eval_count": 27,
+   "latency_s": 0.336,
+   "eval_count": 28,
    "ok": true,
    "why": ""
   },
@@ -1052,11 +1062,11 @@
    "action": "lead",
    "to": null,
    "answer": null,
-   "confidence": 0.0,
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.42,
-   "eval_count": 18,
+   "latency_s": 0.268,
+   "eval_count": 20,
    "ok": true,
    "why": ""
   },
@@ -1075,7 +1085,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.499,
+   "latency_s": 0.305,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1095,7 +1105,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.443,
+   "latency_s": 0.275,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1115,7 +1125,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.403,
+   "latency_s": 0.275,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1135,7 +1145,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.467,
+   "latency_s": 0.321,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1155,7 +1165,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.47,
+   "latency_s": 0.266,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1175,7 +1185,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.479,
+   "latency_s": 0.272,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1192,11 +1202,11 @@
    "action": "lead",
    "to": null,
    "answer": null,
-   "confidence": 0.0,
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.472,
-   "eval_count": 18,
+   "latency_s": 0.283,
+   "eval_count": 20,
    "ok": true,
    "why": ""
   },
@@ -1215,7 +1225,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.427,
+   "latency_s": 0.316,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1235,7 +1245,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.495,
+   "latency_s": 0.283,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1255,7 +1265,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.492,
+   "latency_s": 0.274,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1275,7 +1285,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.457,
+   "latency_s": 0.263,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1295,7 +1305,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.434,
+   "latency_s": 0.31,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1315,7 +1325,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.474,
+   "latency_s": 0.322,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1335,7 +1345,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.524,
+   "latency_s": 0.319,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1355,7 +1365,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.533,
+   "latency_s": 0.576,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1375,7 +1385,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.507,
+   "latency_s": 0.36,
    "eval_count": 21,
    "ok": true,
    "why": ""
@@ -1395,7 +1405,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.51,
+   "latency_s": 0.299,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1415,7 +1425,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.522,
+   "latency_s": 0.322,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1439,7 +1449,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.525,
+   "latency_s": 0.354,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1453,16 +1463,16 @@
    "expect": {
     "action": "relay"
    },
-   "action": "relay",
-   "to": "aurora",
-   "answer": null,
-   "confidence": 0.95,
+   "action": "answer",
+   "to": null,
+   "answer": "No, the last line was one hour ago.",
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.5,
-   "eval_count": 22,
-   "ok": true,
-   "why": ""
+   "latency_s": 0.407,
+   "eval_count": 28,
+   "ok": false,
+   "why": "action answer not in ['relay']"
   },
   {
    "id": "mh09",
@@ -1476,11 +1486,11 @@
    "action": "relay",
    "to": "home automation",
    "answer": null,
-   "confidence": 0.0,
+   "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.504,
-   "eval_count": 19,
+   "latency_s": 0.312,
+   "eval_count": 21,
    "ok": true,
    "why": ""
   },
@@ -1499,7 +1509,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.55,
+   "latency_s": 0.417,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1519,7 +1529,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.479,
+   "latency_s": 0.297,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1539,8 +1549,250 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.524,
+   "latency_s": 0.434,
    "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho01",
+   "class": "heldout",
+   "text": "the badge on the phone is too small",
+   "heard": null,
+   "routed_text": "the badge on the phone is too small",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.348,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho02",
+   "class": "heldout",
+   "text": "ask aurora to make the voice cell taller",
+   "heard": null,
+   "routed_text": "ask aurora to make the voice cell taller",
+   "expect": {
+    "action": "relay",
+    "to_contains": "aurora"
+   },
+   "action": "relay",
+   "to": "aurora",
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.335,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho03",
+   "class": "heldout",
+   "text": "has anyone posted in the last hour",
+   "heard": null,
+   "routed_text": "has anyone posted in the last hour",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, aurora-design posted at 1440 and 390.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.409,
+   "eval_count": 32,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho04",
+   "class": "heldout",
+   "text": "give aurora a seat here",
+   "heard": null,
+   "routed_text": "give aurora a seat here",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.326,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho05",
+   "class": "heldout",
+   "text": "could we get the timestamps back on the export",
+   "heard": null,
+   "routed_text": "could we get the timestamps back on the export",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.39,
+   "eval_count": 29,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho06",
+   "class": "heldout",
+   "text": "who posted most recently",
+   "heard": null,
+   "routed_text": "who posted most recently",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "aurora-design posted most recently.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.396,
+   "eval_count": 25,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho07",
+   "class": "heldout",
+   "text": "let home automation know the porch light is stuck on",
+   "heard": null,
+   "routed_text": "let home automation know the porch light is stuck on",
+   "expect": {
+    "action": "relay",
+    "to_contains": "home"
+   },
+   "action": "relay",
+   "to": "home automation",
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.274,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho08",
+   "class": "heldout",
+   "text": "turn off the voice panel",
+   "heard": null,
+   "routed_text": "turn off the voice panel",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.0,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.304,
+   "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho09",
+   "class": "heldout",
+   "text": "what is the lead working on",
+   "heard": null,
+   "routed_text": "what is the lead working on",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "E1 kind migration is in, running npm test now.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.325,
+   "eval_count": 30,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho10",
+   "class": "heldout",
+   "text": "I think we should ship the summary feature next",
+   "heard": null,
+   "routed_text": "I think we should ship the summary feature next",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.296,
+   "eval_count": 20,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho11",
+   "class": "heldout",
+   "text": "tell the lead the harness passed",
+   "heard": null,
+   "routed_text": "tell the lead the harness passed",
+   "expect": {
+    "action": "lead"
+   },
+   "action": "lead",
+   "to": null,
+   "answer": null,
+   "confidence": 0.95,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.295,
+   "eval_count": 22,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "ho12",
+   "class": "heldout",
+   "text": "is my earlier message still open",
+   "heard": null,
+   "routed_text": "is my earlier message still open",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "Yes, the message to the lead about the hat is still open.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.375,
+   "eval_count": 32,
    "ok": true,
    "why": ""
   }

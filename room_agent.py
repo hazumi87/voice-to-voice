@@ -288,8 +288,9 @@ def route(text: str, context: dict, model: str = None, timeout: float = ROUTER_T
             conf = 0.5
         # Deterministic clean-up of the label the model picked.
         addressee = extract_addressee(text)
-        if addressee is not None and action != "answer":
-            # The words name someone: relay to THAT name (or the lead), whatever the model said.
+        if addressee is not None:
+            # The words name someone ("ask aurora if…", "tell the lead…"): relay to THAT name
+            # (or the lead), whatever the model said, even when it called the utterance a question.
             if addressee.lower() in _LEAD_WORDS:
                 action, to = "lead", None
             else:
