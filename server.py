@@ -567,7 +567,8 @@ def _gpu_status_body():
         elif _tts_loading:
             body["busy_reason"] = "loading the voice model"
         elif op:
-            body["busy_reason"] = "warming voices" if op == "tts.create_clone_prompt" else f"GPU op {op}"
+            warm = op.startswith("tts.warmup") or op == "tts.create_clone_prompt"
+            body["busy_reason"] = "warming voices" if warm else f"GPU op {op}"
     if _tts_last_load_s is not None:
         body["reload_cost_s"] = int(round(_tts_last_load_s)) + 30  # + post-load warmup
     if rooms:
