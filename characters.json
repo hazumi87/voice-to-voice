@@ -206,6 +206,24 @@
         "temperature": 0.0,
         "steps": 32
       }
+    },
+    {
+      "schema_version": 2,
+      "id": "olivia_rodrigo",
+      "title": "Olivia Rodrigo",
+      "name": "Olivia",
+      "label": "Olivia",
+      "voice": "bdd2023c-13c0-4963-a55a-5a3a6d29a57f",
+      "bio": "",
+      "style": "",
+      "strength": "none",
+      "split_synth": false,
+      "tuning": {
+        "speed": 1.0,
+        "guidance": 2.0,
+        "temperature": 0.0,
+        "steps": 32
+      }
     }
   ]
 }
