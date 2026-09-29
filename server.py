@@ -1230,6 +1230,15 @@ def _post_load_setup():
         print(f"[tts] warmup done (paths: {_warmup_paths})", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[tts] voice prompt rebuild after load failed: {e}", flush=True)
+    # Warmup leaves ~1.3 GB of freed blocks in torch's cache (reserved 9.7 GB vs 8.4 steady,
+    # measured 2026-09-28). Hand them back so the router / other apps fit beside voice.
+    try:
+        before = torch.cuda.memory_reserved()
+        torch.cuda.empty_cache()
+        print(f"[tts] post-warmup cache release: {before // 2**20} -> "
+              f"{torch.cuda.memory_reserved() // 2**20} MiB reserved", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[tts] post-warmup cache release skipped: {e}", flush=True)
 
 
 def ensure_tts():
