@@ -619,6 +619,32 @@ def gpu_status():
     return _gpu_status_body()
 
 
+@app.get("/gpu/debug")
+def gpu_debug():
+    """Debug panel: torch allocated vs reserved, and what still references any OmniVoice
+    instance (a release that frees nothing means something kept the model alive)."""
+    import gc
+    gc.collect()
+    models = [o for o in gc.get_objects() if type(o).__name__ == "OmniVoice"]
+    refs = []
+    for m in models:
+        for r in gc.get_referrers(m):
+            if r is models:
+                continue
+            if isinstance(r, dict):
+                owner = next((k for k, v in r.items() if v is m), "?")
+                refs.append(f"dict key {owner!r} ({len(r)} keys)")
+            else:
+                refs.append(type(r).__name__)
+    try:
+        alloc = int(torch.cuda.memory_allocated() / 2**20)
+        reserved = int(torch.cuda.memory_reserved() / 2**20)
+    except Exception:  # noqa: BLE001
+        alloc = reserved = None
+    return {"allocated_mib": alloc, "reserved_mib": reserved, "omnivoice_instances": len(models),
+            "tts_model_set": tts_model is not None, "referrers": refs[:20]}
+
+
 @app.post("/gpu/release")
 def gpu_release():
     why = _interactive_refusal()
