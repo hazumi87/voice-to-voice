@@ -210,3 +210,13 @@
   project cwd, one command per call for foreign repos, worktrees under F:\tmp.
 - Hazard: the server rewrites voice_devices.json (mode flips), which blocks `git checkout` mid-merge;
   restore the file (all devices chat) before switching branches.
+
+## 2026-09-29T04:50:00Z — GPU traffic cop client (harbor gpu-cop/1), live on main
+- gpu_cop_client.py + server.py: GET /gpu/status (state, interactive = room connected or turn in flight,
+  restart_safe, busy_reason, floor_mib 10752, load_error, router_resident_mib), POST /gpu/release, /gpu/drain;
+  TTS load gate (ignores own reservation) and router gate (respects it; the refusal is spoken). Manifest gpu
+  block set via harbor update_service (realtime, floor 10752).
+- T9 turn with harbor: restart refused with turns in flight; force needs a reason; enforced reservation released on loaded.
+- Finding: torch.cuda.empty_cache() after warmup drops v2v from ~8.4-9.7 GB to 2.2 GB held. The "8.4 GB
+  inelastic" figure was allocator cache. The 10.5 GB floor is still unmeasured; measure the real load peak (V3, vk-1831).
+- Vikunja task create 403s (project 55); commits tagged [vk-1847] (harbor T9).
