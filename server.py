@@ -1185,6 +1185,9 @@ def load_custom_voices():
             wav, _ = sf.read(os.path.join(CUSTOM_DIR, vid + ".wav"))
             custom_prompts[vid] = build_clone_prompt(np.asarray(wav, dtype=np.float32), meta["ref_text"])
             print(f"[init] loaded custom voice '{label}' ({vid})", flush=True)
+            # Cap the warmup PEAK: each build leaves differently-sized freed blocks in torch's
+            # cache, so the peak climbed to ~9.7 GB across all voices (2026-09-28, GPU cop T9).
+            torch.cuda.empty_cache()
         except Exception as e:  # noqa: BLE001
             print(f"[init] prompt build deferred/failed for {vid}: {e}", flush=True)
     custom_voices[:] = listed  # replace in one assignment (no empty-list window)
@@ -1230,8 +1233,9 @@ def _post_load_setup():
         print(f"[tts] warmup done (paths: {_warmup_paths})", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[tts] voice prompt rebuild after load failed: {e}", flush=True)
-    # Warmup leaves ~1.3 GB of freed blocks in torch's cache (reserved 9.7 GB vs 8.4 steady,
-    # measured 2026-09-28). Hand them back so the router / other apps fit beside voice.
+    # Warmup leaves freed blocks in torch's cache: reserved 9.7 GB after warmup vs 2.2 GB
+    # after this release (measured 2026-09-28, GPU cop T9). Hand them back so the router and
+    # other apps fit beside voice.
     try:
         before = torch.cuda.memory_reserved()
         torch.cuda.empty_cache()
