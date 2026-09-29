@@ -65,3 +65,6 @@ working/harness/stt_cache/
 working/harness/*.log
 working/room_voice_state.json*
 working/room_memory.json*
+
+# Generated hold clips (hold_clips.py): rendered per voice at runtime, ~22 MB of WAVs
+working/hold_clips/
