@@ -557,6 +557,17 @@ def _gpu_status_body():
             [OLLAMA_MODEL, getattr(room_agent, "ROUTER_MODEL", None)] if "room_agent" in globals()
             else [OLLAMA_MODEL]),
     }
+    if not body["restart_safe"]:
+        # Optional (harbor appends it to the refusal text): WHY it isn't safe right now.
+        op = _gpu_inflight["op"]
+        if rooms:
+            body["busy_reason"] = f"voice connected in room {rooms[0][2] or rooms[0][1]}"
+        elif inflight:
+            body["busy_reason"] = f"{inflight} voice turn(s) in flight"
+        elif _tts_loading:
+            body["busy_reason"] = "loading the voice model"
+        elif op:
+            body["busy_reason"] = "warming voices" if op == "tts.create_clone_prompt" else f"GPU op {op}"
     if _tts_last_load_s is not None:
         body["reload_cost_s"] = int(round(_tts_last_load_s)) + 30  # + post-load warmup
     if rooms:
