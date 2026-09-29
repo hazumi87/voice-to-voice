@@ -162,8 +162,9 @@ class H(BaseHTTPRequestHandler):
                                           "openedAt": time.time()}
                 STATE["lines"].setdefault(rid, []).append(self._line(rid, "fact", "system", None,
                                                                      f"voice connected · {body.get('device')}"))
+            # E1 shape: the room's voice settings ride under `voice` on open.
             return self._json(200, {"channelId": cid, "name": r["name"], "lead": r["lead"],
-                                    "settings": {"voice": r["settings"]["voice"]}})
+                                    "voice": dict(r["settings"]["voice"])})
         if u.path == "/api/voice/channels/close":
             with LOCK:
                 ch = STATE["channels"].pop(body.get("channelId") or "", None)

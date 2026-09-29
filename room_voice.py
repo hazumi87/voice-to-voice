@@ -341,10 +341,18 @@ class RoomVoice:
         status, body = self.engine.open_channel(channel_id, device)
         if status != 200:
             return TurnResult(_fmt("engine_down"), "open_failed", status=status, body=body)
-        settings = body.get("settings", {}).get("voice") if isinstance(body.get("settings"), dict) else None
+        # The engine's open answers {channelId, name, lead, voice:{character, paraphrase,
+        # wordCap, ...}} (E1); the device-state push uses settings.voice. Accept all three
+        # shapes, or the connect line speaks in the wrong voice (G, 2026-09-28).
+        settings = None
+        if isinstance(body.get("voice"), dict):
+            settings = body["voice"]
+        elif isinstance(body.get("settings"), dict):
+            settings = body["settings"].get("voice") if isinstance(body["settings"].get("voice"), dict) \
+                else body["settings"]
         self.state.update(device, channelId=body.get("channelId") or channel_id,
                           name=body.get("name") or name, lead=body.get("lead"),
-                          settings=settings or body.get("settings") or {},
+                          settings=settings or {},
                           muted=False, waiting=False, since=time.time(),
                           lastSpoken=None, lastReplyId=None, speaker=sid)
         self.set_device_mode(device, "development")
@@ -361,16 +369,19 @@ class RoomVoice:
         if not ch:
             return TurnResult(_fmt("not_connected") if speak else "", "not_connected")
         self.engine.close_channel(ch, device, reason)
+        character = (st.get("settings") or {}).get("character")
         self.state.clear(device)
         self.set_device_mode(device, "chat")
+        # The line is spoken after the state is gone: carry the room's character with it.
         return TurnResult(_fmt("disconnected", name=st.get("name") or "the room") if speak else "",
-                          "disconnected", channelId=ch)
+                          "disconnected", channelId=ch, character=character)
 
     def self_heal(self, device: str, status) -> TurnResult:
         """409 no_channel / 404 channel_gone from inbound: the engine no longer has us."""
+        character = (self.state.get(device).get("settings") or {}).get("character")
         self.state.clear(device)
         self.set_device_mode(device, "chat")
-        return TurnResult(_fmt("channel_gone"), "channel_gone", status=status)
+        return TurnResult(_fmt("channel_gone"), "channel_gone", status=status, character=character)
 
     # -- engine-pushed state (§9.3) ------------------------------------------------
     def apply_engine_state(self, device: str, payload: dict) -> dict:

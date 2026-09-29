@@ -3168,10 +3168,11 @@ def _summarize_for_voice(text: str, max_words: int) -> str:
     return out.rstrip() + " Details are in the chat."
 
 
-def _room_voice_for(device: str, fallback_voice: str):
-    """The room's character voice (settings.voice.character) if set, else the speaker's."""
+def _room_voice_for(device: str, fallback_voice: str, character: str = None):
+    """The room's character voice (settings.voice.character) if set, else the speaker's.
+    `character` overrides the state (a disconnect line speaks after the state is cleared)."""
     st = _room_state.get(device)
-    char = ((st.get("settings") or {}).get("character") or "") if st else ""
+    char = character or (((st.get("settings") or {}).get("character") or "") if st else "")
     if char:
         ch = find_character(str(char))
         if ch is not None:
@@ -3185,7 +3186,7 @@ def _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf, sp
                          voice, t0, t_stt, route_label):
     """Speak a TurnResult on the Dot path (WAV + the same X-headers the dev turn uses)."""
     t_eng = time.time()
-    rvoice, tn = _room_voice_for(device, voice)
+    rvoice, tn = _room_voice_for(device, voice, character=res.extra.get("character"))
     if res.say:
         sp, gd, tp, st = clamp_tuning(float(tn.get("speed", 1.0)), float(tn.get("guidance", 2.0)),
                                       float(tn.get("temperature", 0.0)), int(tn.get("steps", 16)))
