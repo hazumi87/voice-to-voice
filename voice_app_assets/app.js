@@ -12,7 +12,8 @@
 // the closed vocabulary this frame ever sends is:
 //   {panel:"status", speaking}
 //   {panel:"height", px}
-//   {panel:"voice", action:"mute"|"unmute"|"disconnect"|"id-on"|"id-off"}
+//   {panel:"voice", action:"mute"|"unmute"|"disconnect"|"id-on"|"id-off"|
+//     "openmic-on"|"openmic-off"}
 //   {panel:"line", lineId}
 (function () {
   "use strict";
@@ -24,6 +25,7 @@
   var frameEl = document.getElementById("frame");
   var devEl = document.getElementById("dev");
   var exchangesEl = document.getElementById("exchanges");
+  var openMicBtn = document.getElementById("openMicBtn");
   var muteBtn = document.getElementById("muteBtn");
   var idBtn = document.getElementById("idBtn");
   var disconnectBtn = document.getElementById("disconnectBtn");
@@ -35,10 +37,33 @@
   // posts only when the value actually changed.
   var lastPostedSpeaking = null;
 
-  var MIC_ON = '<rect x="9" y="3" width="6" height="11" rx="3"></rect>' +
-    '<path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>';
-  var MIC_OFF = '<path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3">' +
-    '</path><path d="M5 11a7 7 0 0 0 11.7 5.2M19 11a7 7 0 0 1-.4 2.3M12 18v3M3 3l18 18"></path>';
+  // §9/§10.1 agent-mute + open-mic glyphs -- an Echo Dot "puck" seen from
+  // above (a circle) with three concentric sound-wave arcs on one side.
+  // WAVES_OUT (waves radiating away, right side) is the agent-mute icon: the
+  // agent's voice is what leaves the puck. WAVES_IN (waves converging in,
+  // left side, mirrored) is the open-mic-after-replies icon: it is a SETTING
+  // glyph (the puck listening), never a live "mic is open now" indicator.
+  // Both are stroke-only/currentColor/no-fill, matching voice_app_assets/
+  // icons/puck-waves-{out,in}.svg verbatim (that pair has no overlay).
+  var WAVES_OUT = '<circle cx="7" cy="12" r="4"></circle>' +
+    '<path d="M13 8.5a5 5 0 0 1 0 7"></path>' +
+    '<path d="M16 6a8.5 8.5 0 0 1 0 12"></path>' +
+    '<path d="M19 3.5a12 12 0 0 1 0 17"></path>';
+  var WAVES_IN = '<circle cx="17" cy="12" r="4"></circle>' +
+    '<path d="M11 8.5a5 5 0 0 0 0 7"></path>' +
+    '<path d="M8 6a8.5 8.5 0 0 0 0 12"></path>' +
+    '<path d="M5 3.5a12 12 0 0 0 0 17"></path>';
+  // Overlay paths (never part of the base icon files): a fixed diagonal
+  // slash in the error/danger token for "off", a small check in the ok/
+  // success token for "on". Hard-coded to those tokens rather than
+  // currentColor -- the state color must not follow the button's own hover/
+  // pressed text color the way the base glyph does. tokens.css has no
+  // literal --error/--ok name; --magenta is its documented error/disconnect
+  // function color and --teal its documented done/ok function color (see
+  // --jp-error/--jp-done, --mcp-err/--mcp-ok in tokens.css) -- never --coral,
+  // which stays reserved for "waiting".
+  var WAVES_SLASH = '<path d="M4 4l16 16" stroke="var(--vfb-off)"></path>';
+  var WAVES_CHECK = '<path d="M14.5 16.5l2 2 4-4.5" stroke="var(--vfb-on)"></path>';
 
   // §10.1 idInRoom toggle glyph -- a small id-badge/shield outline. Off
   // (idInRoom false) draws the same outline plus a diagonal slash; the
@@ -222,14 +247,34 @@
   }
 
   // The frame's Mute toggle shows the state the engine/state row last sent.
-  // It never guesses ahead of that -- no optimistic toggle on click.
+  // It never guesses ahead of that -- no optimistic toggle on click. The
+  // glyph is the puck-with-outgoing-waves (the agent's voice leaving the
+  // puck); muted overlays a fixed error-token slash across it, so this never
+  // again reads as "mute MY mic" the way the old mic glyph did.
   function renderMute(muted, connected) {
     muteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
-    muteBtn.setAttribute("aria-label", muted ? "Unmute" : "Mute");
-    muteBtn.title = muted ? "Unmute" : "Mute";
-    muteBtn.innerHTML = '<svg viewBox="0 0 24 24">' + (muted ? MIC_OFF : MIC_ON) + '</svg>';
+    muteBtn.setAttribute("aria-label", muted ? "Unmute agent voice" : "Mute agent voice");
+    muteBtn.title = muted ? "Unmute agent voice" : "Mute agent voice";
+    muteBtn.innerHTML = '<svg viewBox="0 0 24 24">' + WAVES_OUT +
+      (muted ? WAVES_SLASH : "") + '</svg>';
     muteBtn.disabled = !connected;
     disconnectBtn.disabled = !connected;
+  }
+
+  // §9/§10.1 open-mic-after-replies toggle. A SETTING button, not a live
+  // "mic is open now" indicator -- its pressed state comes only from
+  // data.openMic (state JSON field, default true when absent), never a
+  // guess ahead of the click. Glyph is the puck-with-incoming-waves; on
+  // overlays a fixed ok-token check, off overlays the same error-token slash
+  // renderMute uses.
+  function renderOpenMic(openMic, connected) {
+    openMicBtn.setAttribute("aria-pressed", openMic ? "true" : "false");
+    openMicBtn.setAttribute("aria-label",
+      openMic ? "Open mic after replies: on" : "Open mic after replies: off");
+    openMicBtn.title = openMicBtn.getAttribute("aria-label");
+    openMicBtn.innerHTML = '<svg viewBox="0 0 24 24">' + WAVES_IN +
+      (openMic ? WAVES_CHECK : WAVES_SLASH) + '</svg>';
+    openMicBtn.disabled = !connected;
   }
 
   // §10.1 security toggle idInRoom. Same rule as Mute: shows only the last
@@ -271,6 +316,7 @@
     renderSpeaking(speaking);
     renderDev(data.device, data.since, connected);
     renderMute(!!data.muted, connected);
+    renderOpenMic(data.openMic !== false, connected);
     renderId(data.idInRoom !== false, connected);
     renderExchanges(data.exchanges, !!data.waiting);
     postHeight();
@@ -286,6 +332,14 @@
     }
     var muted = muteBtn.getAttribute("aria-pressed") === "true";
     post({ panel: "voice", action: muted ? "unmute" : "mute" });
+  });
+
+  openMicBtn.addEventListener("click", function () {
+    if (openMicBtn.disabled) {
+      return;
+    }
+    var on = openMicBtn.getAttribute("aria-pressed") === "true";
+    post({ panel: "voice", action: on ? "openmic-off" : "openmic-on" });
   });
 
   idBtn.addEventListener("click", function () {
@@ -356,6 +410,7 @@
           muted: data.muted,
           connected: data.connected,
           idInRoom: data.idInRoom,
+          openMic: data.openMic,
           waiting: data.waiting,
           device: data.device,
           since: data.since,

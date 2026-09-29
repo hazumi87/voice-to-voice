@@ -42,6 +42,10 @@ button {
    as a second layer, but the layout itself must never require more than
    320px so .fr-top (device/speaking/Mute/Disconnect) is always visible. */
 .fr {
+  /* function colours for the toggles, shared names with the host page: off/muted slash
+     = Aurora's error function, on check = Aurora's ok function. One line to change. */
+  --vfb-off: var(--magenta);
+  --vfb-on: var(--teal);
   padding: 10px 14px 10px;
   min-height: 96px;
 }
@@ -125,7 +129,7 @@ button {
   height: 14px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   flex: none;
@@ -144,6 +148,47 @@ button {
 }
 
 .mute:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* §9/§10.1 open-mic-after-replies toggle -- placed LEFT of .mute in the
+   markup. Same size/state rules as .mute/.idbtn (idle dim, on/pressed
+   text+surface3); the on/off fact itself is carried by the check/slash
+   overlay app.js draws (fixed ok/error tokens), not by this background. */
+.openmic {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border2);
+  border-radius: var(--corner);
+  color: var(--dim);
+  flex: none;
+}
+
+.openmic svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+.openmic:hover {
+  color: var(--text);
+  background: var(--cap-hover);
+}
+
+.openmic[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--surface3);
+}
+
+.openmic:disabled {
   opacity: .5;
   cursor: default;
 }
@@ -200,6 +245,7 @@ button {
   cursor: default;
 }
 
+.openmic:focus-visible,
 .mute:focus-visible,
 .idbtn:focus-visible,
 .disc:focus-visible,
@@ -210,6 +256,7 @@ button {
 
 /* Touch, not iframe width -- the iframe is narrow on desktop too. */
 @media (pointer: coarse) {
+  .openmic,
   .mute,
   .idbtn {
     width: 40px;

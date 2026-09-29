@@ -3243,6 +3243,12 @@ def _room_turn_response(transcript, device, spk_id, spk_name, spk_conf, spk_deta
     res = _room.room_turn(device, transcript, spk_name, spk_id, spk_conf, match, utt_id,
                           is_followup=is_followup, followup_to=followup_to)
     res.extra["utteranceId"] = utt_id
+    # Room setting openMic (Eric, 2026-09-28; default on): off = the Dot never reopens the
+    # mic on its own after a line I speak in the room; he says the wake word each time.
+    # The engine applies the same rule to seat replies via expectsReply on deliver.
+    if res.expects_reply and (_room_state.get(device).get("settings") or {}).get("openMic", True) is False:
+        res.expects_reply = False
+        res.extra["openMic"] = False
     return _room_voice_response(res, device, transcript, spk_name, spk_id, spk_conf, spk_detail,
                                 voice, t0, t_stt, "turn")
 

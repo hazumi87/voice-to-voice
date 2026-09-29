@@ -111,6 +111,7 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
             "waiting": False,
             "speaking": False,
             "idInRoom": True,
+            "openMic": True,
             "exchanges": [],
             "serverTime": time.time(),
         }
@@ -121,6 +122,9 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
     # §10.1 security toggle idInRoom (default true when absent) -- read off
     # the device row's settings, same field room_voice.py itself reads.
     id_in_room = (row.get("settings") or {}).get("idInRoom", True) is not False
+    # §10.1 open-mic-after-replies setting (default true when absent) -- same
+    # read shape as idInRoom above, off the device row's own settings.
+    open_mic = (row.get("settings") or {}).get("openMic", True) is not False
     return {
         "connected": True,
         "device": device_id,
@@ -131,6 +135,7 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
         "waiting": bool(row.get("waiting")),
         "speaking": speaking,
         "idInRoom": id_in_room,
+        "openMic": open_mic,
         "exchanges": exchanges,
         "serverTime": time.time(),
     }
@@ -139,7 +144,8 @@ def _real_state_payload(devices: dict, state, room_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Fixture: deterministic sample data, reachable without the engine or a real
 # device. /rooms/fixture/view?state=connected|disconnected&muted=0|1&
-# waiting=0|1&exchanges=0|1|3&long=1&fallback=0|1&speaking=0|1&id=0|1
+# waiting=0|1&exchanges=0|1|3&long=1&fallback=0|1&speaking=0|1&id=0|1&
+# openmic=0|1
 # ---------------------------------------------------------------------------
 _FIXTURE_IN = [
     "What's the status on the north wing survey.",
@@ -187,6 +193,7 @@ def _fixture_state_payload(qp) -> dict:
     fallback = _bool_q(qp, "fallback", False)
     speaking = _bool_q(qp, "speaking", False)
     id_in_room = _bool_q(qp, "id", True)
+    open_mic = _bool_q(qp, "openmic", True)
     try:
         n = int(qp.get("exchanges", "3"))
     except (TypeError, ValueError):
@@ -230,6 +237,7 @@ def _fixture_state_payload(qp) -> dict:
         "waiting": waiting,
         "speaking": speaking,
         "idInRoom": id_in_room,
+        "openMic": open_mic,
         "exchanges": exchanges,
         "serverTime": now,
     }
@@ -252,6 +260,7 @@ _PAGE_TEMPLATE = """<!doctype html>
   <div class="fr-top">
     <span class="dev" id="dev"></span>
     <span class="spk" id="speakingRow"><i></i><i></i><i></i>Speaking</span>
+    <button id="openMicBtn" class="openmic" type="button" aria-pressed="false"></button>
     <button id="muteBtn" class="mute" type="button" aria-pressed="false"></button>
     <button id="idBtn" class="idbtn" type="button" aria-pressed="false"></button>
     <button id="disconnectBtn" class="disc" type="button">Disconnect</button>

@@ -29,9 +29,9 @@ STATE = {
                    {"handle": "vrpc-briefing-table", "spokenName": "vrpc briefing table", "lead": False, "state": "idle", "activity": "", "lastLineAgoS": 1200},
                    {"handle": "aurora-design", "spokenName": "aurora", "lead": False, "state": "idle", "activity": "", "lastLineAgoS": 3900}],
                "tools": [{"title": "Tasks", "kind": "tasks", "seat": "briefing-table"}],
-               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": True, "idInRoom": True, "idleDisconnect": True}}},
+               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": True, "idInRoom": True, "idleDisconnect": True, "openMic": True}}},
         "r2": {"name": "Workrooms build", "lead": "briefing-table", "aliases": ["workrooms"], "seats": [], "tools": [],
-               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": False, "idInRoom": False, "idleDisconnect": False}}},
+               "settings": {"voice": {"enabled": True, "character": None, "paraphrase": "off", "wordCap": 40, "idleMinutes": 30, "idOnConnect": False, "idInRoom": False, "idleDisconnect": False, "openMic": False}}},
     },
     "channels": {},      # channelId -> {device, muted, waiting, openedAt}
     "lines": {},         # roomId -> [line]
