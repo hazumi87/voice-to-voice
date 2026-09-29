@@ -229,6 +229,9 @@ class H(BaseHTTPRequestHandler):
                 if body.get("action") == "answer":
                     STATE["lines"].setdefault(rid, []).append(self._line(rid, "voice", "user", None, body.get("text") or ""))
                     STATE["lines"][rid].append(self._line(rid, "voice", "voice", None, body.get("answer") or "", spoken=True))
+                elif body.get("action") == "say":
+                    # E1 v3.5: the voice agent's own line, not counted as lastSpoken
+                    STATE["lines"].setdefault(rid, []).append(self._line(rid, "voice", "voice", None, body.get("answer") or ""))
                 if body.get("followupTo"):
                     ch = STATE["channels"]["room:" + rid]
                     ch["waiting"] = False

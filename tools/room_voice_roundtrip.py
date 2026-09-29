@@ -165,6 +165,15 @@ def main():
         r = rv.connect_turn(dev, "voice interaction", "Eric", sid, 0.9)
         check("eric back on r1", r.outcome == "connected")
 
+        print("say recording (E1 v3.5)")
+        says = [c for c in calls()["calls"] if c["path"].endswith("/said") and c["body"].get("action") == "say"]
+        said_lines = [c["body"]["answer"] for c in says]
+        check("connect line recorded as say", any("Connected to" in l for l in said_lines), said_lines[:3])
+        check("disconnect line recorded as say", any("Disconnected from" in l for l in said_lines))
+        check("mute line recorded as say", any(l.startswith("Muted") for l in said_lines))
+        check("voice-ID lines recorded as say", any("Voice ID" in l or "voice ID" in l for l in said_lines))
+        check("say-again readback recorded as say", any("said:" in l for l in said_lines))
+
         print("stale mode self-heal")
         urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/_reset", data=b"{}", method="POST"), timeout=5)
         r = rv.room_turn(dev, "tell aurora hello", "Eric", sid, 0.9, "full", "u14")

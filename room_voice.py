@@ -359,6 +359,7 @@ class RoomVoice:
         room_id = (body.get("channelId") or channel_id)[len(ROOM_PREFIX):]
         remembered = bool(self.memory.get(room_id, sid).get("turns"))
         line = _fmt("reconnected" if remembered else "connected", name=body.get("name") or name)
+        self._record_say(room_id, device, sid, None, f"connect to {name}", line)
         return TurnResult(line, "connected", channelId=body.get("channelId") or channel_id,
                           name=body.get("name") or name)
 
@@ -368,6 +369,11 @@ class RoomVoice:
         ch = st.get("channelId")
         if not ch:
             return TurnResult(_fmt("not_connected") if speak else "", "not_connected")
+        line_said = _fmt("disconnected", name=st.get("name") or "the room") if speak else ""
+        if line_said and ch.startswith(ROOM_PREFIX):
+            # Recorded BEFORE the channel closes, so the engine still accepts it.
+            self._record_say(ch[len(ROOM_PREFIX):], device, st.get("speaker") or "", None,
+                             "disconnect", line_said)
         self.engine.close_channel(ch, device, reason)
         character = (st.get("settings") or {}).get("character")
         self.state.clear(device)
@@ -427,8 +433,15 @@ class RoomVoice:
         # 1. deterministic intents
         it = room_agent.parse_intent(transcript)
         if it:
-            return self._intent(device, st, room_id, it, transcript, speaker, sid, conf, match,
-                                utterance_id, followup_to)
+            res = self._intent(device, st, room_id, it, transcript, speaker, sid, conf, match,
+                               utterance_id, followup_to)
+            # E1 v3.5: every line the voice agent speaks in a room is recorded as a voice
+            # line (Eric: none of them appeared in the chat). connect/disconnect record
+            # themselves (the channel state differs there); the rest go here.
+            if res.say and res.outcome not in ("connected", "disconnected", "channel_gone",
+                                               "not_connected"):
+                self._record_say(room_id, device, sid, utterance_id, transcript, res.say)
+            return res
 
         # 2. open-mic non-sequitur -> ignore (logged, never a room line)
         if is_followup and room_agent.is_non_sequitur(transcript):
@@ -555,6 +568,17 @@ class RoomVoice:
                 line = _fmt("nothing_waiting")
             return TurnResult(line, "whats_waiting", expects_reply=waiting)
         return TurnResult(_fmt("relay_failed"), "unknown_intent")
+
+    def _record_say(self, room_id: str, device: str, sid: str, utterance_id: str | None,
+                    transcript: str, line: str) -> None:
+        """POST /said {action:"say"}: the voice agent's own spoken line becomes a voice line
+        in the room (E1 v3.5). Best-effort; a failure never blocks the spoken reply."""
+        try:
+            self.engine.said(room_id, {"utteranceId": utterance_id or f"say-{int(time.time() * 1000)}",
+                                       "text": transcript or "", "device": device, "sid": sid or "",
+                                       "action": "say", "answer": line, "confidence": 1.0})
+        except Exception as e:  # noqa: BLE001
+            self.log(f"[room] /said say failed: {e!r}")
 
     # -- delivery bookkeeping (called by the deliver route) ---------------------------
     def note_spoken(self, device: str, author: str | None, body: str, reply_id: str | None,

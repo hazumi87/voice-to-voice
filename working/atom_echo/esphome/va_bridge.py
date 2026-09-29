@@ -138,6 +138,17 @@ SPEECH_START_FRAMES = 6         # voiced 20 ms frames (120 ms) before a turn cou
 # whenever the physical Dot disconnects — never assume-always-listening).
 BACKOFF_MIN = 3.0
 BACKOFF_MAX = 60.0
+# Rapid-failure guard (lead, 2026-09-29): a bridge that crashes right after connecting must
+# not hammer EchoMuse's API socket (a crash loop reconnecting every 3 s wedged the Dot until
+# it refused connections and had to be power-cycled). A failure within RAPID_FAIL_WINDOW_S
+# of a connect keeps the backoff growing instead of resetting it, and RAPID_FAIL_MAX such
+# failures inside RAPID_FAIL_SPAN_S park the device: the process stays up, /devices reports
+# the reason, the Healthchecks heartbeat stops (harbor goes red), and nobody reconnects
+# until a human fixes the code and restarts the service.
+RAPID_FAIL_WINDOW_S = 30.0
+RAPID_FAIL_MAX = 5
+RAPID_FAIL_SPAN_S = 120.0
+_BRIDGE_DOWN: dict = {}       # dev_id -> reason (parked devices)
 
 MDNS_SERVICE = "_esphomelib._tcp.local."
 
@@ -890,7 +901,8 @@ async def devices_list(request: web.Request) -> web.Response:
         b = _bridges.get(d["id"])
         out.append({"id": d["id"], "enabled": bool(d.get("enabled", True)),
                     "connected": b is not None,
-                    "busy": bool(b.busy()) if b is not None else None})
+                    "busy": bool(b.busy()) if b is not None else None,
+                    "parked": _BRIDGE_DOWN.get(d["id"])})
     return web.json_response({"devices": out})
 
 
@@ -912,10 +924,11 @@ def _start_hc_heartbeat(interval=60):
         return
     def _loop():
         while True:
-            try:
-                urllib.request.urlopen(url, timeout=5).read()
-            except Exception:  # noqa: BLE001
-                pass
+            if not _BRIDGE_DOWN:
+                try:
+                    urllib.request.urlopen(url, timeout=5).read()
+                except Exception:  # noqa: BLE001
+                    pass
             time.sleep(interval)
     threading.Thread(target=_loop, daemon=True, name="hc-heartbeat").start()
     print(f"[hc] heartbeat -> {url} every {interval}s", flush=True)
@@ -1024,9 +1037,12 @@ async def run_device(dev: dict, cfg: dict):
     loop = asyncio.get_event_loop()
     dev_id = dev["id"]
     backoff = BACKOFF_MIN
+    connected_at = 0.0
+    rapid_fails: list = []
     while True:
         client = None
         disconnected = asyncio.Event()
+        connected_at = 0.0
 
         async def _on_stop(expected: bool):
             # Fires when the device link drops. Without this the loop parked on
@@ -1059,7 +1075,7 @@ async def run_device(dev: dict, cfg: dict):
                                password=dev.get("password", ""))
             await client.connect(on_stop=_on_stop, login=True)
             print(f"[{dev_id}] [api] connected to {addr}:{port}", flush=True)
-            backoff = BACKOFF_MIN          # success resets the backoff
+            connected_at = time.time()     # the backoff resets only after a SUSTAINED link
             await _dump_entities(client, dev_id)   # room-voice V0: LED / wake-word evidence
             bridge = VoiceBridge(client, dev, cfg)
             client.subscribe_voice_assistant(
@@ -1070,10 +1086,26 @@ async def run_device(dev: dict, cfg: dict):
             print(f"[{dev_id}] [api] subscribed to voice_assistant (API-audio)", flush=True)
             _bridges[dev_id] = bridge      # announce ingress can reach this device now
             await disconnected.wait()      # park until the link drops, then reconnect
-            print(f"[{dev_id}] [api] link dropped — reconnecting in {BACKOFF_MIN:.0f}s",
+            if time.time() - connected_at > RAPID_FAIL_WINDOW_S:
+                backoff = BACKOFF_MIN      # a sustained link earns a fresh backoff
+            print(f"[{dev_id}] [api] link dropped — reconnecting in {backoff:.0f}s",
                   flush=True)
-            await asyncio.sleep(BACKOFF_MIN)
+            await asyncio.sleep(backoff)
         except Exception as e:  # noqa: BLE001
+            now = time.time()
+            if connected_at and now - connected_at < RAPID_FAIL_WINDOW_S:
+                rapid_fails = [t for t in rapid_fails if now - t < RAPID_FAIL_SPAN_S] + [now]
+                if len(rapid_fails) >= RAPID_FAIL_MAX:
+                    _BRIDGE_DOWN[dev_id] = f"{len(rapid_fails)} failures within {RAPID_FAIL_SPAN_S:.0f}s after connecting; last: {e!r}"
+                    print(f"[{dev_id}] [api] PARKED: {_BRIDGE_DOWN[dev_id]}. Not reconnecting; "
+                          f"heartbeat stopped. Fix the bridge and restart the service.", flush=True)
+                    _bridges.pop(dev_id, None)
+                    if client is not None:
+                        try:
+                            await client.disconnect()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return
             print(f"[{dev_id}] [api] connect/run failed: {e!r}; retry in {backoff:.0f}s",
                   flush=True)
             await asyncio.sleep(backoff)
