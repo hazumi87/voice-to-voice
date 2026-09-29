@@ -290,7 +290,7 @@ class VoiceBridge:
         # Room turns are composed messages with thinking pauses: a longer hang, chat unchanged.
         self.silence_hang_room = float(dev.get("silence_hang_room_s", 0) or 0)
         self._hang_for_run = self.silence_hang
-        self._no_speech_for_run = self.no_speech_timeout
+        self._no_speech_for_run = NO_SPEECH_TIMEOUT     # per-run value set in handle_start
         self._cont_pcm = b""                  # audio stashed from a device-cut run
         self._cont_until = 0.0                # loop time; continuation window end
         self._cont_followup = None            # the cut run's follow-up marker
