@@ -91,6 +91,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 HERE = os.path.dirname(os.path.abspath(__file__))
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 import gpu_cop_client  # harbor GPU traffic cop (gpu-cop/1): load gates + /gpu/status helpers
+import hold_clips  # pre-rendered "warming up" lines, played while OmniVoice reloads
 OLLAMA_MODEL = "llama3.2:3b"  # smaller/faster for snappy turns
 
 # Appended to every personality so all replies stay short and TTS-friendly.
@@ -1248,6 +1249,7 @@ def _post_load_setup():
               f"{torch.cuda.memory_reserved() // 2**20} MiB reserved", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[tts] post-warmup cache release skipped: {e}", flush=True)
+    _hold_backfill_bg()
 
 
 def ensure_tts():
@@ -1565,6 +1567,7 @@ def add_custom_voice(audio: UploadFile = File(...), name: str = Form(...)):
         custom_voices.append(entry)
         custom_prompts[vid] = prompt
     print(f"[custom] added voice '{label}' ({vid}) ref_text='{ref_text}'", flush=True)
+    _hold_render_bg([vid], force=True)  # a new voice gets its hold clips at registration
     return {"voice": entry, "ref_text": ref_text}
 
 
@@ -1626,6 +1629,7 @@ def register_custom_voice(
         custom_voices.append(entry)
         custom_prompts[vid] = prompt
     print(f"[custom] registered (no-STT) '{label}' ({vid}) ref_text='{ref_text[:60]}'", flush=True)
+    _hold_render_bg([vid], force=True)  # re-register = new reference -> re-render its hold clips
     return {"voice": entry, "ref_text": ref_text, "skipped_stt": True}
 
 
@@ -1638,6 +1642,7 @@ def delete_custom_voice(voice: str = Form(...)):
         p = os.path.join(CUSTOM_DIR, voice + ext)
         if os.path.exists(p):
             os.remove(p)
+    hold_clips.remove(voice)
     print(f"[custom] deleted voice {voice}", flush=True)
     return {"ok": True}
 
@@ -2615,6 +2620,16 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
         return _dev_turn(transcript, device, spk_id, spk_name, spk_conf, spk_detail,
                          voice, t0, t_stt)
 
+    # HOLD PATH (Eric, 2026-09-29): the reply voice is unloaded (GPU release / restart). We
+    # already know who spoke, so play a pre-rendered clip in their voice NOW, and push the real
+    # reply to the device once OmniVoice has loaded.
+    if tts_model is None and device:
+        held = _hold_turn(device, transcript, personality, spk_name, history_key, spk_style,
+                          voice, speaker, spk_id, spk_conf, (speed, guidance, temperature, steps),
+                          t0, t_stt)
+        if held is not None:
+            return held
+
     # ollama reachability is the known gaming-mode-killswitch failure point.
     try:
         reply = chat(transcript, personality, speaker_name=spk_name,
@@ -2657,6 +2672,167 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     }
     return Response(content=wav, media_type="audio/wav", headers=headers)
 
+
+
+# ---------------------------------------------------------------------------
+# HOLD CLIPS (hold_clips.py): rendering + the held turn.
+# ---------------------------------------------------------------------------
+HOLD_LOAD_WAIT_S = 120      # how long a held turn keeps trying to load TTS before giving up
+HOLD_STILL_AFTER_S = 25     # one "still working" clip if the load takes longer than this
+_hold_render_lock = threading.Lock()
+
+
+def _all_voice_ids():
+    with custom_lock:
+        custom = [v["id"] for v in custom_voices]
+    return [v["id"] for v in VOICES] + custom
+
+
+def _hold_render(voice_ids, force=False):
+    """Render missing (or, with force, all) hold clips for these voices. One synth at a time;
+    yields to live turns so a backfill never delays a person."""
+    done = 0
+    with _hold_render_lock:
+        for vid in voice_ids:
+            kinds = hold_clips.KINDS if force else hold_clips.missing(vid)
+            for kind in kinds:
+                while True:
+                    with _turns_lock:
+                        busy = _turns["n"] > 0
+                    if not busy:
+                        break
+                    time.sleep(1.0)
+                if tts_model is None:
+                    print(f"[hold] render stopped: TTS unloaded ({done} rendered)", flush=True)
+                    return done
+                try:
+                    wav = synth(hold_clips.LINES[kind], vid)
+                    hold_clips.save(vid, kind, wav)
+                    done += 1
+                except Exception as e:  # noqa: BLE001 - one bad voice never stops the rest
+                    print(f"[hold] render failed {vid}/{kind}: {e}", flush=True)
+                    break
+    if done:
+        print(f"[hold] rendered {done} clip(s)", flush=True)
+    return done
+
+
+def _hold_render_bg(voice_ids, force=False):
+    threading.Thread(target=_hold_render, args=(list(voice_ids), force),
+                     name="hold-render", daemon=True).start()
+
+
+def _hold_backfill_bg():
+    """After a load: render whatever clips are missing, default voice first."""
+    ids = _all_voice_ids()
+    ids = [DEFAULT_VOICE] + [v for v in ids if v != DEFAULT_VOICE]
+    if any(hold_clips.missing(v) for v in ids):
+        _hold_render_bg(ids)
+
+
+def _hold_turn(device, transcript, personality, spk_name, history_key, spk_style, voice,
+               speaker, spk_id, spk_conf, tuning, t0, t_stt):
+    """Answer a turn that arrived with TTS unloaded. Returns the hold-clip Response, or None
+    when the device can't take a later push (then the caller loads TTS inline, as before)."""
+    dev = _voice_devices().get(device) or {}
+    if not dev.get("announce_url"):
+        return None
+    blocked = gpu_cop_client.tts_gate(TTS_FLOOR_MIB)
+    kind = "busy" if blocked else "warming"
+    wav, used = hold_clips.load(voice, kind, DEFAULT_VOICE)
+    if wav is None:
+        return None
+    print(f"[hold] '{transcript}' dev={device} spk={speaker} -> {kind} clip ({used}); "
+          f"reply follows after TTS loads{' [' + blocked + ']' if blocked else ''}", flush=True)
+    with _turns_lock:
+        _turns["n"] += 1    # the held turn is a human waiting: interactive until it's answered
+    threading.Thread(target=_hold_finish, name=f"hold-{device}", daemon=True,
+                     args=(dev, device, transcript, personality, spk_name, history_key,
+                           spk_style, voice, tuning)).start()
+    headers = {
+        "X-Transcript": urllib.parse.quote(transcript),
+        "X-Reply": urllib.parse.quote(hold_clips.LINES[kind]),
+        "X-Speaker": urllib.parse.quote(speaker or "unknown"),
+        "X-Speaker-Sid": spk_id or "",
+        "X-Speaker-Confidence": f"{spk_conf:.3f}",
+        "X-Followup-Listen": "0",
+        "X-Hold": kind,
+        "X-Timing": f"stt={int((t_stt - t0) * 1000)};hold=1;total={int((time.time() - t0) * 1000)}",
+        "Access-Control-Expose-Headers":
+            "X-Transcript,X-Reply,X-Speaker,X-Speaker-Sid,X-Speaker-Confidence,"
+            "X-Followup-Listen,X-Hold,X-Timing",
+    }
+    return Response(content=wav, media_type="audio/wav", headers=headers)
+
+
+def _hold_push(dev, wav):
+    status, body = _push_to_device(dev, wav, False, timeout=30, busy_wait=8)
+    if status != 200:
+        print(f"[hold] push failed: {status} {body}", flush=True)
+    return status == 200
+
+
+def _hold_finish(dev, device, transcript, personality, spk_name, history_key, spk_style,
+                 voice, tuning):
+    """Load TTS (through the cop gate, retrying while the GPU is taken), then answer."""
+    t0 = time.time()
+    still_sent = False
+    try:
+        while True:
+            try:
+                ensure_tts()
+                break
+            except Exception as e:  # noqa: BLE001 - blocked by the cop / not enough VRAM
+                waited = time.time() - t0
+                if waited >= HOLD_LOAD_WAIT_S:
+                    print(f"[hold] gave up after {waited:.0f}s: {e}", flush=True)
+                    wav, _ = hold_clips.load(voice, "giveup", DEFAULT_VOICE)
+                    if wav:
+                        _hold_push(dev, wav)
+                    return
+                if waited >= HOLD_STILL_AFTER_S and not still_sent:
+                    wav, _ = hold_clips.load(voice, "still", DEFAULT_VOICE)
+                    if wav:
+                        _hold_push(dev, wav)
+                    still_sent = True
+                time.sleep(5.0)
+        try:
+            reply = chat(transcript, personality, speaker_name=spk_name,
+                         history_key=history_key, style=spk_style)
+        except gpu_cop_client.RouterGpuWait as e:
+            reply = str(e)
+        except Exception as e:  # noqa: BLE001
+            print(f"[hold] chat failed: {e}", flush=True)
+            reply = "Sorry, my thinking engine isn't answering right now."
+        speed, guidance, temperature, steps = tuning
+        sp, gd, tp, st = clamp_tuning(speed, guidance, temperature, steps)
+        wav = synth(reply, voice, num_step=st, speed=sp, guidance_scale=gd, class_temperature=tp)
+        ok = _hold_push(dev, wav)
+        print(f"[hold] answered '{transcript}' -> '{reply}' dev={device} after "
+              f"{time.time() - t0:.1f}s (pushed={ok})", flush=True)
+    except Exception as e:  # noqa: BLE001 - a background turn must never crash the server
+        print(f"[hold] finish error: {e!r}", flush=True)
+    finally:
+        with _turns_lock:
+            _turns["n"] -= 1
+            _turns["last"] = time.time()
+
+
+@app.get("/api/hold_clips")
+def hold_clips_status():
+    st = hold_clips.status(_all_voice_ids())
+    return {"kinds": list(hold_clips.KINDS), "lines": hold_clips.LINES,
+            "complete": sum(1 for k in st.values() if len(k) == len(hold_clips.KINDS)),
+            "voices": st}
+
+
+@app.post("/api/hold_clips/render")
+def hold_clips_render(payload: dict = Body(default={})):
+    """Dev: (re)render hold clips. {voice?: id, force?: bool}. Runs in the background."""
+    vid = (payload or {}).get("voice")
+    ids = [vid] if vid else _all_voice_ids()
+    _hold_render_bg(ids, force=bool((payload or {}).get("force")))
+    return {"started": True, "voices": len(ids)}
 
 
 # ---------------------------------------------------------------------------
