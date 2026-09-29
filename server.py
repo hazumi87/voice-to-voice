@@ -606,8 +606,13 @@ def _release_tts():
         custom_prompts.clear()
         _refclip_cache.clear()
         import gc
-        gc.collect()
-        torch.cuda.empty_cache()
+        # The model sits in a reference cycle (accelerate's device hooks close over it), so it
+        # is only freed by the cycle collector, and empty_cache() before that frees nothing
+        # (measured 2026-09-29: freed 6 MiB, 0 instances left, 2 GB still reserved). Collect,
+        # empty, and repeat once.
+        for _ in range(2):
+            gc.collect()
+            torch.cuda.empty_cache()
     _evict_ollama()
     after = _torch_reserved_mib() or 0
     print(f"[gpu] released OmniVoice: {before} -> {after} MiB (torch reserved)", flush=True)
@@ -641,8 +646,19 @@ def gpu_debug():
         reserved = int(torch.cuda.memory_reserved() / 2**20)
     except Exception:  # noqa: BLE001
         alloc = reserved = None
+    # The biggest live CUDA tensors, to explain what stays allocated after a release.
+    tens = []
+    for o in gc.get_objects():
+        try:
+            if torch.is_tensor(o) and o.is_cuda:
+                tens.append((o.element_size() * o.nelement(), tuple(o.shape), str(o.dtype)))
+        except Exception:  # noqa: BLE001
+            continue
+    tens.sort(reverse=True)
     return {"allocated_mib": alloc, "reserved_mib": reserved, "omnivoice_instances": len(models),
-            "tts_model_set": tts_model is not None, "referrers": refs[:20]}
+            "tts_model_set": tts_model is not None, "referrers": refs[:20],
+            "cuda_tensors": len(tens), "cuda_tensor_mib": int(sum(t[0] for t in tens) / 2**20),
+            "largest": [{"mib": round(b / 2**20, 1), "shape": sh, "dtype": dt} for b, sh, dt in tens[:12]]}
 
 
 @app.post("/gpu/release")
