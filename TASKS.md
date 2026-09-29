@@ -220,3 +220,9 @@
 - Finding: torch.cuda.empty_cache() after warmup drops v2v from ~8.4-9.7 GB to 2.2 GB held. The "8.4 GB
   inelastic" figure was allocator cache. The 10.5 GB floor is still unmeasured; measure the real load peak (V3, vk-1831).
 - Vikunja task create 403s (project 55); commits tagged [vk-1847] (harbor T9).
+
+## 2026-09-29T06:12:00Z — VRAM floor retired 10.5 -> 6.0 GB, warmup peak capped
+- 7c1d80f releases the torch cache after each custom-voice build; b8b197c sets the floor to 6.0 GB (env TTS_MIN_FREE_VRAM_GB).
+- Measured on reload: loaded and warm in ~10 s; card-level peak ~4.7 GB; steady ~2.1 GB (torch) / 2.4 GB (counter);
+  router llama3.2:3b 2.4 GB. Voice + router ~5 GB. Harbor manifest: floor 6144, run 2500, start_gate false.
+- Harbor froze ~21:46 PT (in-process PDH stall + asyncio closing :8210); fixed harbor-side in 2a12ba5, and Eric relaunched it.
