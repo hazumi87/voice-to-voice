@@ -290,12 +290,15 @@ def answer_room_question(text: str, ctx: dict) -> str | None:
     room = ctx.get("room") or {}
     lead = room.get("lead")
     seats = ctx.get("seats") or []
-    if _Q_WHO_HERE.search(t):
+    # Working/status words win over the roster ("who in the room is working right now and
+    # what's their status" is a working question, G 2026-09-28).
+    asks_status = bool(re.search(r"\b(working|busy|active|status|doing|up\s+to)\b", t))
+    if _Q_WHO_HERE.search(t) and not asks_status:
         if not seats:
             return "No one is seated in the room right now."
         names = [_spoken(s.get("handle"), lead) for s in seats]
         return f"{len(seats)} seat{'s' if len(seats) != 1 else ''}: {_join(names)}."
-    if _Q_WORKING.search(t):
+    if _Q_WORKING.search(t) or (asks_status and re.search(r"\b(who|everyone|everybody|anyone|anybody|they|people|the\s+room|seats?)\b", t)):
         working = [s for s in seats if (s.get("activity") or "").lower() in ("streaming", "working", "busy")]
         idle = [s for s in seats if s not in working]
         if working:

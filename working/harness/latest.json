@@ -1,9 +1,9 @@
 {
  "summary": {
   "model": "llama3.2:3b",
-  "ts": "2026-09-28T22:29:11Z",
-  "n": 98,
-  "correct": 98,
+  "ts": "2026-09-29T01:56:06Z",
+  "n": 100,
+  "correct": 100,
   "accuracy": 1.0,
   "by_class": {
    "implicit_relay": {
@@ -22,8 +22,8 @@
     "accuracy": 1.0
    },
    "room_question": {
-    "n": 16,
-    "ok": 16,
+    "n": 18,
+    "ok": 18,
     "accuracy": 1.0
    },
    "forbidden": {
@@ -47,8 +47,8 @@
     "accuracy": 1.0
    }
   },
-  "tuned_n": 86,
-  "tuned_correct": 86,
+  "tuned_n": 88,
+  "tuned_correct": 88,
   "heldout_n": 12,
   "heldout_correct": 12,
   "heldout_accuracy": 1.0,
@@ -57,18 +57,20 @@
   "forbidden_rate": 1.0,
   "stt_cases": 28,
   "parse_failures": 0,
-  "latency_p50_s": 0.319,
-  "latency_p90_s": 0.357,
+  "latency_p50_s": 0.339,
+  "latency_p90_s": 0.381,
   "non_sequitur_failures": [],
   "intent_failures": [],
+  "deterministic_failures": [],
   "gates": {
    "accuracy_ge_90": true,
    "forbidden_100": true,
    "p90_le_1_5s": true,
    "non_sequitur_100": true,
-   "intents_100": true
+   "intents_100": true,
+   "deterministic_100": true
   },
-  "gpu_note": "unverified class added; STT from cache"
+  "gpu_note": "status words beat the roster; deterministic checks; STT from cache"
  },
  "results": [
   {
@@ -86,7 +88,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.358,
+   "latency_s": 0.61,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -106,7 +108,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.3,
+   "latency_s": 0.307,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -126,7 +128,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.321,
+   "latency_s": 0.316,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -146,7 +148,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.313,
+   "latency_s": 0.326,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -166,7 +168,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.358,
+   "latency_s": 0.312,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -186,7 +188,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.345,
+   "latency_s": 0.328,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -226,7 +228,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.278,
+   "latency_s": 0.299,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -246,7 +248,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.31,
+   "latency_s": 0.308,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -266,7 +268,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.333,
+   "latency_s": 0.319,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -286,7 +288,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.324,
+   "latency_s": 0.345,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -306,7 +308,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.278,
+   "latency_s": 0.341,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -326,7 +328,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.295,
+   "latency_s": 0.311,
    "eval_count": 16,
    "ok": true,
    "why": ""
@@ -347,7 +349,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.344,
+   "latency_s": 0.346,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -368,7 +370,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.307,
+   "latency_s": 0.328,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -389,7 +391,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.335,
+   "latency_s": 0.352,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -410,7 +412,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.271,
+   "latency_s": 0.339,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -431,7 +433,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.347,
+   "latency_s": 0.372,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -452,7 +454,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.294,
+   "latency_s": 0.347,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -473,7 +475,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.317,
+   "latency_s": 0.35,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -494,7 +496,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.332,
+   "latency_s": 0.331,
    "eval_count": 21,
    "ok": true,
    "why": ""
@@ -515,7 +517,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.33,
+   "latency_s": 0.339,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -536,7 +538,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.295,
+   "latency_s": 0.334,
    "eval_count": 23,
    "ok": true,
    "why": ""
@@ -557,7 +559,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.312,
+   "latency_s": 0.327,
    "eval_count": 19,
    "ok": true,
    "why": ""
@@ -578,7 +580,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.355,
+   "latency_s": 0.389,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -598,7 +600,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.333,
+   "latency_s": 0.327,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -618,7 +620,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.306,
+   "latency_s": 0.318,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -638,7 +640,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.306,
+   "latency_s": 0.338,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -658,7 +660,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.337,
+   "latency_s": 0.311,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -682,7 +684,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.342,
+   "latency_s": 0.356,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -702,7 +704,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.28,
+   "latency_s": 0.314,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -722,7 +724,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.276,
+   "latency_s": 0.347,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -746,7 +748,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.337,
+   "latency_s": 0.349,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -767,10 +769,10 @@
    "action": "lead",
    "to": null,
    "answer": null,
-   "confidence": 1.0,
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.326,
+   "latency_s": 0.389,
    "eval_count": 27,
    "ok": true,
    "why": ""
@@ -790,7 +792,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.304,
+   "latency_s": 0.322,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -810,7 +812,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.332,
+   "latency_s": 0.358,
    "eval_count": 24,
    "ok": true,
    "why": ""
@@ -826,12 +828,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "No, Eric, the lead (briefing table) has not answered your message yet.",
+   "answer": "Message received, working on the hat.",
    "confidence": 0.85,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.407,
-   "eval_count": 36,
+   "latency_s": 0.362,
+   "eval_count": 26,
    "ok": true,
    "why": ""
   },
@@ -846,12 +848,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "I can't tell that from the room right now.",
-   "confidence": 0.3,
+   "answer": "Eric",
+   "confidence": 1.0,
    "parse_ok": true,
-   "note": "answer copied from the examples; replaced",
-   "latency_s": 0.382,
-   "eval_count": 36,
+   "note": null,
+   "latency_s": 0.309,
+   "eval_count": 18,
    "ok": true,
    "why": ""
   },
@@ -866,12 +868,12 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "Voice (voice), Tasks (tasks)",
-   "confidence": 1.0,
+   "answer": "Voice, Tasks",
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.321,
-   "eval_count": 24,
+   "latency_s": 0.333,
+   "eval_count": 22,
    "ok": true,
    "why": ""
   },
@@ -890,7 +892,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.292,
+   "latency_s": 0.351,
    "eval_count": 21,
    "ok": true,
    "why": ""
@@ -910,7 +912,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.427,
+   "latency_s": 0.465,
    "eval_count": 42,
    "ok": true,
    "why": ""
@@ -930,7 +932,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.351,
+   "latency_s": 0.342,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -950,7 +952,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.357,
+   "latency_s": 0.381,
    "eval_count": 27,
    "ok": true,
    "why": ""
@@ -970,7 +972,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.341,
+   "latency_s": 0.384,
    "eval_count": 28,
    "ok": true,
    "why": ""
@@ -990,7 +992,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.286,
+   "latency_s": 0.357,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1010,7 +1012,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.419,
+   "latency_s": 0.445,
    "eval_count": 42,
    "ok": true,
    "why": ""
@@ -1030,7 +1032,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.342,
+   "latency_s": 0.359,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1050,7 +1052,7 @@
    "confidence": 0.85,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.335,
+   "latency_s": 0.371,
    "eval_count": 29,
    "ok": true,
    "why": ""
@@ -1070,7 +1072,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.258,
+   "latency_s": 0.314,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1090,7 +1092,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.306,
+   "latency_s": 0.321,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1110,7 +1112,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.302,
+   "latency_s": 0.312,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1130,7 +1132,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.266,
+   "latency_s": 0.324,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1150,7 +1152,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.307,
+   "latency_s": 0.317,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1170,7 +1172,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.277,
+   "latency_s": 0.318,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1190,7 +1192,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.284,
+   "latency_s": 0.322,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1210,7 +1212,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.294,
+   "latency_s": 0.33,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1230,7 +1232,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.262,
+   "latency_s": 0.336,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1250,7 +1252,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.293,
+   "latency_s": 0.346,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1270,7 +1272,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.304,
+   "latency_s": 0.328,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1290,7 +1292,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.32,
+   "latency_s": 0.321,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1310,7 +1312,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.295,
+   "latency_s": 0.326,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1330,7 +1332,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.341,
+   "latency_s": 0.332,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1350,7 +1352,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.308,
+   "latency_s": 0.351,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1370,7 +1372,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.365,
+   "latency_s": 0.372,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1390,7 +1392,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.321,
+   "latency_s": 0.312,
    "eval_count": 19,
    "ok": true,
    "why": ""
@@ -1410,7 +1412,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.292,
+   "latency_s": 0.357,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1430,7 +1432,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.32,
+   "latency_s": 0.345,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1454,7 +1456,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.343,
+   "latency_s": 0.331,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1471,11 +1473,11 @@
    "action": "relay",
    "to": "aurora",
    "answer": null,
-   "confidence": 0.9,
+   "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.308,
-   "eval_count": 20,
+   "latency_s": 0.396,
+   "eval_count": 29,
    "ok": true,
    "why": ""
   },
@@ -1494,7 +1496,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.31,
+   "latency_s": 0.341,
    "eval_count": 19,
    "ok": true,
    "why": ""
@@ -1514,7 +1516,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.342,
+   "latency_s": 0.359,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1534,7 +1536,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.338,
+   "latency_s": 0.345,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1554,7 +1556,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.342,
+   "latency_s": 0.363,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1574,7 +1576,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.29,
+   "latency_s": 0.314,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1595,7 +1597,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.324,
+   "latency_s": 0.35,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1615,7 +1617,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.331,
+   "latency_s": 0.374,
    "eval_count": 29,
    "ok": true,
    "why": ""
@@ -1635,7 +1637,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.275,
+   "latency_s": 0.31,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1655,7 +1657,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.292,
+   "latency_s": 0.359,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -1671,11 +1673,11 @@
    },
    "action": "answer",
    "to": null,
-   "answer": "aurora-design posted most recently at 1440 and 390",
-   "confidence": 1.0,
+   "answer": "aurora-design posted at 1440 and 390",
+   "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.322,
+   "latency_s": 0.374,
    "eval_count": 30,
    "ok": true,
    "why": ""
@@ -1696,7 +1698,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.32,
+   "latency_s": 0.317,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1716,7 +1718,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.289,
+   "latency_s": 0.32,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -1736,7 +1738,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.374,
+   "latency_s": 0.379,
    "eval_count": 34,
    "ok": true,
    "why": ""
@@ -1756,7 +1758,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.285,
+   "latency_s": 0.323,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1776,7 +1778,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.349,
+   "latency_s": 0.325,
    "eval_count": 22,
    "ok": true,
    "why": ""
@@ -1796,7 +1798,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.26,
+   "latency_s": 0.317,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1816,7 +1818,7 @@
    "confidence": 1.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.331,
+   "latency_s": 0.347,
    "eval_count": 28,
    "ok": true,
    "why": ""
@@ -1836,7 +1838,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.317,
+   "latency_s": 0.334,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1856,7 +1858,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.331,
+   "latency_s": 0.343,
    "eval_count": 28,
    "ok": true,
    "why": ""
@@ -1876,7 +1878,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.317,
+   "latency_s": 0.349,
    "eval_count": 29,
    "ok": true,
    "why": ""
@@ -1897,7 +1899,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.293,
+   "latency_s": 0.339,
    "eval_count": 21,
    "ok": true,
    "why": ""
@@ -1917,7 +1919,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.317,
+   "latency_s": 0.312,
    "eval_count": 20,
    "ok": true,
    "why": ""
@@ -1937,7 +1939,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.274,
+   "latency_s": 0.306,
    "eval_count": 16,
    "ok": true,
    "why": ""
@@ -1957,7 +1959,7 @@
    "confidence": 0.85,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.408,
+   "latency_s": 0.425,
    "eval_count": 37,
    "ok": true,
    "why": ""
@@ -1977,7 +1979,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.318,
+   "latency_s": 0.34,
    "eval_count": 23,
    "ok": true,
    "why": ""
@@ -1998,7 +2000,7 @@
    "confidence": 0.95,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.314,
+   "latency_s": 0.371,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -2018,7 +2020,7 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.323,
+   "latency_s": 0.353,
    "eval_count": 25,
    "ok": true,
    "why": ""
@@ -2038,7 +2040,7 @@
    "confidence": 0.0,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.328,
+   "latency_s": 0.301,
    "eval_count": 18,
    "ok": true,
    "why": ""
@@ -2058,8 +2060,48 @@
    "confidence": 0.9,
    "parse_ok": true,
    "note": null,
-   "latency_s": 0.26,
+   "latency_s": 0.303,
    "eval_count": 18,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq17",
+   "class": "room_question",
+   "text": "who in the room is working right now and what's their status",
+   "heard": null,
+   "routed_text": "who in the room is working right now and what's their status",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "briefing-table is currently working on the hat.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.373,
+   "eval_count": 28,
+   "ok": true,
+   "why": ""
+  },
+  {
+   "id": "rq18",
+   "class": "room_question",
+   "text": "what is everyone doing right now",
+   "heard": null,
+   "routed_text": "what is everyone doing right now",
+   "expect": {
+    "action": "answer"
+   },
+   "action": "answer",
+   "to": null,
+   "answer": "briefing-table is idle, vrpc-briefing-table is idle, aurora-design is idle.",
+   "confidence": 0.9,
+   "parse_ok": true,
+   "note": null,
+   "latency_s": 0.436,
+   "eval_count": 39,
    "ok": true,
    "why": ""
   }

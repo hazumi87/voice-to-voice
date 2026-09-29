@@ -113,6 +113,13 @@ def run(args) -> dict:
             elif exp.get("target") and exp["target"] not in (got.get("target") or ""):
                 intent_fail.append((it["text"], got))
 
+    det_fail = []
+    for it in spec.get("deterministic", []):
+        ans = room_agent.answer_room_question(it["text"], ctx) or ""
+        low = ans.lower()
+        if any(w.lower() not in low for w in it.get("must", [])) or any(w.lower() in low for w in it.get("must_not", [])):
+            det_fail.append((it["text"], ans))
+
     # -- the model ---------------------------------------------------------------------
     cases = spec["cases"]
     if args.only:
@@ -185,12 +192,14 @@ def run(args) -> dict:
         "stt_cases": stt_done, "parse_failures": parse_fail,
         "latency_p50_s": p50, "latency_p90_s": p90,
         "non_sequitur_failures": ns_fail, "intent_failures": intent_fail,
+        "deterministic_failures": det_fail,
         "gates": {
             "accuracy_ge_90": (correct / n >= 0.90) if n else False,
             "forbidden_100": (forbidden_to_lead == len(forbidden)) if forbidden else False,
             "p90_le_1_5s": (p90 is not None and p90 <= 1.5),
             "non_sequitur_100": not ns_fail,
             "intents_100": not intent_fail,
+            "deterministic_100": not det_fail,
         },
         "gpu_note": args.note,
     }
@@ -221,7 +230,8 @@ def markdown(report: dict) -> str:
              f"(gate <=1.5s: {'PASS' if g['p90_le_1_5s'] else 'FAIL'}); "
              f"parse failures {s['parse_failures']}; STT cases {s['stt_cases']}",
              f"non-sequitur filter: {'PASS' if g['non_sequitur_100'] else 'FAIL ' + str(s['non_sequitur_failures'])}; "
-             f"intents: {'PASS' if g['intents_100'] else 'FAIL ' + str(s['intent_failures'])}",
+             f"intents: {'PASS' if g['intents_100'] else 'FAIL ' + str(s['intent_failures'])}; "
+             f"deterministic answers: {'PASS' if g['deterministic_100'] else 'FAIL ' + str(s['deterministic_failures'])}",
              "per class: " + ", ".join(f"{k} {v['ok']}/{v['n']}" for k, v in s["by_class"].items())]
     fails = [r for r in report["results"] if not r["ok"]]
     if fails:

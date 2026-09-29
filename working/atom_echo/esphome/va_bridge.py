@@ -82,6 +82,14 @@ MAX_UTTER = 15.0                  # hard cap (backstop against runaway backgroun
 # the first FOLLOWUP_GUARD_S of audio: let the speaker tail/echo decay so only the
 # user's real speech is captured.
 FOLLOWUP_GUARD_S = 0.9
+# Open-mic keep-alive (G, 2026-09-28): EchoMuse ends a start_conversation run on its own
+# after ~1 s of silence (flags=0: the device does its own VAD; our timers never run). So
+# for FOLLOWUP_WINDOW_S after a reply that expects an answer, an empty device-ended run is
+# re-armed with a near-silent clip + start_conversation=True, no beep, no filler, until
+# speech is captured or the window closes silently. Capped so a stuck device can't loop.
+FOLLOWUP_WINDOW_S = 8.0
+FOLLOWUP_REARM_MAX = 16
+FOLLOWUP_REARM_GUARD_S = 0.1
 # Listen cue: mic audio is dropped while the beep plays (until the device confirms it
 # finished), never longer than LISTEN_CUE_MAX_S; LISTEN_CUE_TAIL_S covers the room decay.
 LISTEN_CUE_MAX_S = 2.0
@@ -196,6 +204,10 @@ def make_ack_beep(freq: float = 150.0, ms: int = 220, amp: float = 0.22,
     return buf.getvalue()
 
 
+# 0.3 s at an inaudible level: keeps EchoMuse's announce path happy without a sound.
+_REARM_CLIP = make_ack_beep(freq=150.0, ms=300, amp=0.002)
+
+
 def pcm_to_wav(pcm: bytes, rate: int = MIC_RATE) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -212,10 +224,13 @@ class VoiceBridge:
         # by the next handle_start, sent to v2v with that run's capture.
         self._next_run_followup = None
         self._run_followup = None
+        self._followup_window_until = 0.0     # loop time; open-mic window end
+        self._followup_rearms = 0
         self.client = client
         self.dev_id = dev["id"]
         self.reply_gain = float(dev.get("reply_gain", 1.0))
         self.converse_url = cfg["converse_url"]
+        self.cfg = cfg
         self.reply_url = (f"http://{cfg['server_public_ip']}:{cfg['server_port']}"
                           f"/reply/{self.dev_id}.wav")
         self._buf = bytearray()
@@ -333,6 +348,8 @@ class VoiceBridge:
             played_ms = int((self._loop.time() - t0) * 1000)
             self._log(f"[announce] played {len(wav)}B in {played_ms}ms "
                       f"start_conversation={int(start_conversation)}")
+            if start_conversation:
+                self._open_followup_window()
             return {"delivered": True, "played_ms": played_ms}
 
     async def handle_start(self, conversation_id, flags, audio_settings, wake_word_phrase):
@@ -422,6 +439,12 @@ class VoiceBridge:
                 if not self._heard_speech and self._speech_frames >= SPEECH_START_FRAMES:
                     self._heard_speech = True
                     self._log("[audio] speech started")
+                    # EchoMuse (2.24.1) acts on the standard events: VAD_START stops its
+                    # fixed 2.5 s + 1 s follow-up timer so a paused reply is not cut.
+                    try:
+                        self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_VAD_START, {})
+                    except Exception:  # noqa: BLE001
+                        pass
         if self._audio_chunks % 25 == 0:
             rms = audioop.rms(audio, 2)
             self._log(f"[audio] {self._audio_chunks} chunks, {len(self._buf)}B, rms={rms}")
@@ -455,6 +478,42 @@ class VoiceBridge:
         self._processing = True
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_VAD_END, {})
         self._run_end()
+
+    def _open_followup_window(self):
+        self._followup_window_until = self._loop.time() + FOLLOWUP_WINDOW_S
+        self._followup_rearms = 0
+
+    def _maybe_rearm_followup(self):
+        """An open-mic run that the device ended with nothing in it: re-arm the mic if the
+        window is still open. Never on a wake-word run (no re-arm loop after a real
+        silence there), never past the cap."""
+        if self._run_followup is None:
+            return
+        if self._loop.time() >= self._followup_window_until:
+            self._log("[followup] window closed, nothing heard -> silent end")
+            return
+        if self._followup_rearms >= FOLLOWUP_REARM_MAX:
+            self._log("[followup] re-arm cap reached -> silent end")
+            return
+        self._followup_rearms += 1
+        rid = self._run_followup
+        asyncio.create_task(self._rearm_followup(rid, self._followup_rearms))
+
+    async def _rearm_followup(self, reply_id: str, n: int):
+        try:
+            self.rearm_key = f"{self.dev_id}-rearm"
+            self.rearm_url = (f"http://{self.cfg['server_public_ip']}:{self.cfg['server_port']}"
+                              f"/reply/{self.rearm_key}.wav")
+            _reply_store[self.rearm_key] = _REARM_CLIP
+            self._next_run_guard = FOLLOWUP_REARM_GUARD_S   # no loud audio to settle
+            self._next_run_followup = reply_id
+            await self.client.send_voice_assistant_announcement_await_response(
+                media_id=self.rearm_url, timeout=5.0, start_conversation=True)
+            left = max(0.0, self._followup_window_until - self._loop.time())
+            self._log(f"[followup] re-arm #{n} (window {left:.1f}s left)")
+        except Exception as e:  # noqa: BLE001
+            self._next_run_followup = None
+            self._log(f"[followup] re-arm #{n} failed ({e!r}) -> silent end")
 
     async def handle_stop(self, server_side: bool):
         n = len(self._buf)
@@ -494,6 +553,7 @@ class VoiceBridge:
         if n < 1600:
             self._log(f"[end] too little audio ({n}B), aborting")
             self._run_end()
+            self._maybe_rearm_followup()
             return
         # Anti-hallucination gate: if the whole turn never produced VAD-qualifying
         # speech, don't send it to STT — Whisper invents phrases ("Thank you.") on
@@ -505,6 +565,7 @@ class VoiceBridge:
             self._log(f"[end] no qualifying speech ({n}B, controller-ended) — "
                       f"dropping turn silently (anti-hallucination)")
             self._run_end()
+            self._maybe_rearm_followup()
             return
         pcm = bytes(self._buf)
         self._buf = bytearray()
@@ -638,6 +699,7 @@ class VoiceBridge:
                 await self.client.send_voice_assistant_announcement_await_response(
                     media_id=self.reply_url, timeout=20.0, start_conversation=True)
                 self._log(f"[followup] announced {self.reply_url} + re-opened mic (voice-only)")
+                self._open_followup_window()
             except Exception as e:  # noqa: BLE001
                 self._log(f"[followup] announce/continue failed: {e!r}")
         else:

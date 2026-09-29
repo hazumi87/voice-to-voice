@@ -1018,6 +1018,22 @@
       "expect": {
         "action": "lead"
       }
+    },
+    {
+      "id": "rq17",
+      "class": "room_question",
+      "text": "who in the room is working right now and what's their status",
+      "expect": {
+        "action": "answer"
+      }
+    },
+    {
+      "id": "rq18",
+      "class": "room_question",
+      "text": "what is everyone doing right now",
+      "expect": {
+        "action": "answer"
+      }
     }
   ],
   "non_sequiturs": {
@@ -1421,5 +1437,87 @@
         "agoS": 1180
       }
     }
-  }
+  },
+  "deterministic": [
+    {
+      "text": "who in the room is working right now and what's their status",
+      "must": [
+        "working"
+      ],
+      "must_not": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "who's working",
+      "must": [
+        "working"
+      ],
+      "must_not": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "who is busy right now",
+      "must": [
+        "working"
+      ],
+      "must_not": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "what is everyone doing",
+      "must": [
+        "working"
+      ],
+      "must_not": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "who is in the room",
+      "must": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "who's here",
+      "must": [
+        "3 seats"
+      ]
+    },
+    {
+      "text": "who is the lead",
+      "must": [
+        "lead is briefing table"
+      ]
+    },
+    {
+      "text": "what tools are in the room",
+      "must": [
+        "Voice",
+        "Tasks"
+      ]
+    },
+    {
+      "text": "did the lead answer me yet",
+      "must": [
+        "acknowledged"
+      ]
+    },
+    {
+      "text": "how long ago did aurora post",
+      "must": [
+        "1 h ago",
+        "posted"
+      ]
+    },
+    {
+      "text": "am I muted",
+      "must": [
+        "not muted"
+      ]
+    }
+  ]
 }
