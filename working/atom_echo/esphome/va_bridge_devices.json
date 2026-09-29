@@ -22,12 +22,13 @@
       "mdns_port_max": 16999,
       "password": "",
       "reply_gain": 1.0,
-      "filler_set": "jerma",
+      "filler_set": "beep",
       "enabled": true,
       "silence_hang_s": 1.2,
       "no_speech_timeout_s": 15,
       "max_utterance_s": 90,
-      "listen_cue": true
+      "listen_cue": true,
+      "_filler_comment": "beep = low-frequency ack tone (Eric 2026-09-28); 'jerma' = the voice clips under fillers/jerma"
     }
   ]
 }

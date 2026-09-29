@@ -169,6 +169,33 @@ def amplify_wav(wav_bytes: bytes, factor: float) -> bytes:
     return out.getvalue()
 
 
+def make_ack_beep(freq: float = 150.0, ms: int = 220, amp: float = 0.22,
+                  rate: int = 24000) -> bytes:
+    """A soft low-frequency 'got it' tone (Eric, 2026-09-28): the thinking filler for
+    rooms. Voice clips were all Jerma, which is wrong when the room speaks in another
+    character's voice. Sine at `freq`, 12 ms fade-in, 60 ms fade-out, 16-bit mono."""
+    import math
+    n = int(rate * ms / 1000)
+    fade_in = int(rate * 0.012)
+    fade_out = int(rate * 0.060)
+    frames = bytearray()
+    for i in range(n):
+        env = 1.0
+        if i < fade_in:
+            env = i / fade_in
+        elif i > n - fade_out:
+            env = max(0.0, (n - i) / fade_out)
+        v = int(32767 * amp * env * math.sin(2 * math.pi * freq * i / rate))
+        frames += int(v).to_bytes(2, "little", signed=True)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(frames))
+    return buf.getvalue()
+
+
 def pcm_to_wav(pcm: bytes, rate: int = MIC_RATE) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -233,7 +260,11 @@ class VoiceBridge:
         self.filler_url = (f"http://{cfg['server_public_ip']}:{cfg['server_port']}"
                            f"/reply/{self.filler_key}.wav")
         fset = dev.get("filler_set", "")
-        if fset:
+        if fset == "beep":
+            # Not amplified by reply_gain: the tone's own amplitude is the level.
+            self._fillers.append(make_ack_beep())
+            self._log("[filler] set 'beep': low-frequency ack tone (no voice clips)")
+        elif fset:
             fdir = os.path.join(_BRIDGE_DIR, "fillers", fset)
             if os.path.isdir(fdir):
                 for fn in sorted(os.listdir(fdir)):
