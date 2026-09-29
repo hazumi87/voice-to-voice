@@ -189,6 +189,7 @@ LINES = {
     "disconnected": "Disconnected from {name}.",
     "not_connected": "You're not connected to a room.",
     "no_rooms": "I can't find any rooms to connect to.",
+    "voice_off": "Voice is turned off for {name}. You can turn it on in the settings.",
     "no_match": "I can't find a room called {target}.",
     "ambiguous": "Did you mean {options}?",
     "engine_down": "The table isn't answering.",
@@ -339,6 +340,9 @@ class RoomVoice:
             # One connection per device (§3): hopping closes the old one first.
             self.engine.close_channel(prev["channelId"], device, "hop")
         status, body = self.engine.open_channel(channel_id, device)
+        if status == 409 and "disabled" in str((body or {}).get("error", "")).lower():
+            # Voice is off for the user globally or for this room (settings split, 2026-09-29).
+            return TurnResult(_fmt("voice_off", name=name), "voice_disabled", status=status, body=body)
         if status != 200:
             return TurnResult(_fmt("engine_down"), "open_failed", status=status, body=body)
         # The engine's open answers {channelId, name, lead, voice:{character, paraphrase,
