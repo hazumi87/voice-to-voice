@@ -45,14 +45,17 @@
   // glyph (the puck listening), never a live "mic is open now" indicator.
   // Both are stroke-only/currentColor/no-fill, matching voice_app_assets/
   // icons/puck-waves-{out,in}.svg verbatim (that pair has no overlay).
-  var WAVES_OUT = '<circle cx="7" cy="12" r="4"></circle>' +
-    '<path d="M13 8.5a5 5 0 0 1 0 7"></path>' +
-    '<path d="M16 6a8.5 8.5 0 0 1 0 12"></path>' +
-    '<path d="M19 3.5a12 12 0 0 1 0 17"></path>';
-  var WAVES_IN = '<circle cx="17" cy="12" r="4"></circle>' +
-    '<path d="M11 8.5a5 5 0 0 0 0 7"></path>' +
-    '<path d="M8 6a8.5 8.5 0 0 0 0 12"></path>' +
-    '<path d="M5 3.5a12 12 0 0 0 0 17"></path>';
+  // Eric's reference: a flat puck (wide rounded rectangle) at the bottom, arcs above.
+  // OUT = wifi-style arcs, smallest nearest the puck. IN = smile arcs, largest nearest.
+  // Paths pinned by the lead (line 1028) so the host fallback draws the identical glyph.
+  var WAVES_OUT = '<rect x="5" y="14" width="14" height="7" rx="3.5"></rect>' +
+    '<path d="M9 11.5Q12 9.5 15 11.5"></path>' +
+    '<path d="M7 8.5Q12 5 17 8.5"></path>' +
+    '<path d="M5 5.5Q12 0.5 19 5.5"></path>';
+  var WAVES_IN = '<rect x="5" y="14" width="14" height="7" rx="3.5"></rect>' +
+    '<path d="M9.5 3Q12 5 14.5 3"></path>' +
+    '<path d="M7.5 6Q12 9 16.5 6"></path>' +
+    '<path d="M5.5 9Q12 13 18.5 9"></path>';
   // Overlay paths (never part of the base icon files): a fixed diagonal
   // slash in the error/danger token for "off", a small check in the ok/
   // success token for "on". Hard-coded to those tokens rather than
@@ -63,7 +66,8 @@
   // --jp-error/--jp-done, --mcp-err/--mcp-ok in tokens.css) -- never --coral,
   // which stays reserved for "waiting".
   var WAVES_SLASH = '<path d="M4 4l16 16" stroke="var(--vfb-off)"></path>';
-  var WAVES_CHECK = '<path d="M14.5 16.5l2 2 4-4.5" stroke="var(--vfb-on)"></path>';
+  // The check sits top-right, clear of the puck (y 14-21) and of the largest arc.
+  var WAVES_CHECK = '<path d="M16 5l2 2 4-4.5" stroke="var(--vfb-on)"></path>';
 
   // §10.1 idInRoom toggle glyph -- a small id-badge/shield outline. Off
   // (idInRoom false) draws the same outline plus a diagonal slash; the
