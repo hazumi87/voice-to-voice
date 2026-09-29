@@ -189,7 +189,8 @@ LINES = {
     "disconnected": "Disconnected from {name}.",
     "not_connected": "You're not connected to a room.",
     "no_rooms": "I can't find any rooms to connect to.",
-    "voice_off": "Voice is turned off for {name}. You can turn it on in the settings.",
+    "voice_off": "Voice is turned off for {name}. You can turn it on in the room settings.",
+    "voice_off_global": "Voice is turned off in your settings.",
     "no_match": "I can't find a room called {target}.",
     "ambiguous": "Did you mean {options}?",
     "engine_down": "The table isn't answering.",
@@ -342,7 +343,9 @@ class RoomVoice:
         status, body = self.engine.open_channel(channel_id, device)
         if status == 409 and "disabled" in str((body or {}).get("error", "")).lower():
             # Voice is off for the user globally or for this room (settings split, 2026-09-29).
-            return TurnResult(_fmt("voice_off", name=name), "voice_disabled", status=status, body=body)
+            # The engine's 409 body: {"error":"voice-disabled", "scope":"global"|"room"}.
+            key = "voice_off_global" if str((body or {}).get("scope", "")).lower() == "global" else "voice_off"
+            return TurnResult(_fmt(key, name=name), "voice_disabled", status=status, body=body)
         if status != 200:
             return TurnResult(_fmt("engine_down"), "open_failed", status=status, body=body)
         # The engine's open answers {channelId, name, lead, voice:{character, paraphrase,
