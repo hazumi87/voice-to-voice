@@ -614,6 +614,14 @@ def _release_tts():
             gc.collect()
             torch.cuda.empty_cache()
     _evict_ollama()
+    # Measured 2026-09-29: the model is freed only AFTER this call returns (0 instances a moment
+    # later, 2 GB still reserved), so keep collecting + emptying for a few seconds.
+    for _ in range(6):
+        if (_torch_reserved_mib() or 0) - int(torch.cuda.memory_allocated() / 2**20) < 128:
+            break
+        time.sleep(0.5)
+        gc.collect()
+        torch.cuda.empty_cache()
     after = _torch_reserved_mib() or 0
     print(f"[gpu] released OmniVoice: {before} -> {after} MiB (torch reserved)", flush=True)
     return max(0, before - after)
@@ -625,11 +633,14 @@ def gpu_status():
 
 
 @app.get("/gpu/debug")
-def gpu_debug():
+def gpu_debug(empty: int = 0):
     """Debug panel: torch allocated vs reserved, and what still references any OmniVoice
-    instance (a release that frees nothing means something kept the model alive)."""
+    instance (a release that frees nothing means something kept the model alive).
+    ?empty=1 runs gc + torch.cuda.empty_cache() first."""
     import gc
     gc.collect()
+    if empty:
+        torch.cuda.empty_cache()
     models = [o for o in gc.get_objects() if type(o).__name__ == "OmniVoice"]
     refs = []
     for m in models:
@@ -655,10 +666,26 @@ def gpu_debug():
         except Exception:  # noqa: BLE001
             continue
     tens.sort(reverse=True)
+    # Top-level nn.Modules holding CUDA parameters, to name who owns what's left.
+    mods = []
+    try:
+        all_mods = [o for o in gc.get_objects() if isinstance(o, torch.nn.Module)]
+        children = {id(c) for m in all_mods for c in m.children()}
+        for m in all_mods:
+            if id(m) in children:
+                continue
+            b = sum(p.element_size() * p.nelement() for p in m.parameters() if p.is_cuda)
+            b += sum(x.element_size() * x.nelement() for x in m.buffers() if x.is_cuda)
+            if b >= 8 * 2**20:
+                mods.append((b, f"{type(m).__module__}.{type(m).__name__}"))
+    except Exception as e:  # noqa: BLE001
+        mods.append((0, f"scan failed: {e}"))
+    mods.sort(reverse=True)
     return {"allocated_mib": alloc, "reserved_mib": reserved, "omnivoice_instances": len(models),
             "tts_model_set": tts_model is not None, "referrers": refs[:20],
             "cuda_tensors": len(tens), "cuda_tensor_mib": int(sum(t[0] for t in tens) / 2**20),
-            "largest": [{"mib": round(b / 2**20, 1), "shape": sh, "dtype": dt} for b, sh, dt in tens[:12]]}
+            "largest": [{"mib": round(b / 2**20, 1), "shape": sh, "dtype": dt} for b, sh, dt in tens[:12]],
+            "modules": [{"mib": round(b / 2**20, 1), "type": t} for b, t in mods[:12]]}
 
 
 @app.post("/gpu/release")
