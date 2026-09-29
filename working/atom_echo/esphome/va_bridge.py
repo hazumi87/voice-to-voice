@@ -90,6 +90,28 @@ FOLLOWUP_GUARD_S = 0.9
 FOLLOWUP_WINDOW_S = 8.0
 FOLLOWUP_REARM_MAX = 16
 FOLLOWUP_REARM_GUARD_S = 0.1
+# Continuation (G, 2026-09-28): EchoMuse stopped a wake-word run at 19.4 s with speech still
+# in the last chunks (a device-side cap), and its gated follow-up streams stop after ~0.9 s
+# of silence, so a pause mid-sentence cuts the thought. When the device ends a run while
+# speech is still going (no silence hang reached), the bridge stashes the audio, re-arms at
+# once with the silent clip, and stitches the next capture onto it before STT. Nothing
+# following within CONT_WINDOW_S -> the partial goes to STT as it is.
+CONT_WINDOW_S = 2.5
+# Device-table path (server.py writes `mode` per device there; hot-read by mtime).
+_VOICE_DEVICES_PATH = os.path.join(_BRIDGE_DIR, "..", "..", "..", "voice_devices.json")
+_devices_cache = {"mtime": 0.0, "data": {}}
+
+
+def _device_mode(dev_id: str) -> str:
+    try:
+        m = os.path.getmtime(_VOICE_DEVICES_PATH)
+        if m != _devices_cache["mtime"]:
+            with open(_VOICE_DEVICES_PATH, encoding="utf-8") as f:
+                _devices_cache["data"] = (json.load(f) or {}).get("devices") or {}
+            _devices_cache["mtime"] = m
+        return str((_devices_cache["data"].get(dev_id) or {}).get("mode") or "chat")
+    except Exception:  # noqa: BLE001
+        return "chat"
 # Listen cue: mic audio is dropped while the beep plays (until the device confirms it
 # finished), never longer than LISTEN_CUE_MAX_S; LISTEN_CUE_TAIL_S covers the room decay.
 LISTEN_CUE_MAX_S = 2.0
@@ -264,6 +286,14 @@ class VoiceBridge:
         # the cue finished, so the beep is never in the clip and can't trip speech-start.
         self.listen_cue = bool(dev.get("listen_cue", True))
         self.silence_hang = float(dev.get("silence_hang_s", SILENCE_HANG))
+        # Room turns are composed messages with thinking pauses: a longer hang, chat unchanged.
+        self.silence_hang_room = float(dev.get("silence_hang_room_s", 0) or 0)
+        self._hang_for_run = self.silence_hang
+        self._cont_pcm = b""                  # audio stashed from a device-cut run
+        self._cont_until = 0.0                # loop time; continuation window end
+        self._cont_followup = None            # the cut run's follow-up marker
+        self._next_run_is_cont = False
+        self._run_is_cont = False
         self.no_speech_timeout = float(dev.get("no_speech_timeout_s", NO_SPEECH_TIMEOUT))
         self.max_utter = float(dev.get("max_utterance_s", MAX_UTTER))
         self.cue_key = f"{self.dev_id}-cue"
@@ -374,6 +404,18 @@ class VoiceBridge:
         self._next_run_guard = 0.0
         self._run_followup = getattr(self, "_next_run_followup", None)
         self._next_run_followup = None
+        self._run_is_cont = self._next_run_is_cont
+        self._next_run_is_cont = False
+        mode = _device_mode(self.dev_id)
+        self._hang_for_run = (self.silence_hang_room if (mode == "development" and self.silence_hang_room)
+                              else self.silence_hang)
+        if self._run_is_cont:
+            self._log(f"[cont] continuation run ({len(self._cont_pcm)}B stashed, "
+                      f"window {max(0.0, self._cont_until - now):.1f}s)")
+        elif self._cont_pcm:
+            # A fresh (non-continuation) run: whatever was stashed is stale.
+            self._cont_pcm = b""
+            self._cont_followup = None
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_RUN_START, {})
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_START, {})
         if self.listen_cue and _CUE_LISTEN and self._run_followup is None:
@@ -466,8 +508,8 @@ class VoiceBridge:
                         return
                     continue
                 silence = now - self._last_voice_t
-                if silence > self.silence_hang or (now - self._start_t) > self.max_utter:
-                    why = "silence" if silence > self.silence_hang else "maxlen"
+                if silence > self._hang_for_run or (now - self._start_t) > self.max_utter:
+                    why = "silence" if silence > self._hang_for_run else "maxlen"
                     self._log(f"[watchdog] end-of-utterance ({why}, {len(self._buf)}B)")
                     await self._end_and_process()
                     return
@@ -518,7 +560,40 @@ class VoiceBridge:
     async def handle_stop(self, server_side: bool):
         n = len(self._buf)
         self._log(f"[stop] server_side={server_side} bytes={n} ({n/32000.0:.2f}s)")
+        if (not server_side and not self._processing and self._heard_speech
+                and (self._loop.time() - self._last_voice_t) < self._hang_for_run):
+            # The device cut the stream mid-speech (its run cap, or its own VAD on a gated
+            # follow-up stream): keep the audio and open the mic again straight away.
+            self._processing = True
+            if self._watchdog:
+                self._watchdog.cancel()
+            self._cont_pcm = self._cont_pcm + bytes(self._buf)
+            self._buf = bytearray()
+            self._cont_until = self._loop.time() + CONT_WINDOW_S
+            self._cont_followup = self._run_followup if not self._run_is_cont else self._cont_followup
+            self._log(f"[cont] device cut mid-speech; stashed {len(self._cont_pcm)}B, re-arming")
+            self._run_end()
+            asyncio.create_task(self._rearm_continuation())
+            return
         await self._end_and_process()
+
+    async def _rearm_continuation(self):
+        try:
+            self.rearm_key = f"{self.dev_id}-rearm"
+            self.rearm_url = (f"http://{self.cfg['server_public_ip']}:{self.cfg['server_port']}"
+                              f"/reply/{self.rearm_key}.wav")
+            _reply_store[self.rearm_key] = _REARM_CLIP
+            self._next_run_guard = FOLLOWUP_REARM_GUARD_S
+            self._next_run_followup = self._cont_followup
+            self._next_run_is_cont = True
+            await self.client.send_voice_assistant_announcement_await_response(
+                media_id=self.rearm_url, timeout=5.0, start_conversation=True)
+        except Exception as e:  # noqa: BLE001
+            self._log(f"[cont] re-arm failed ({e!r}); sending the partial")
+            self._next_run_is_cont = False
+            pcm, self._cont_pcm = self._cont_pcm, b""
+            if pcm:
+                asyncio.create_task(self._process(pcm))
 
     def _dump_capture(self, pcm: bytes):
         try:
@@ -550,6 +625,13 @@ class VoiceBridge:
         # last_capture.wav (previous_capture.wav = the one before), so a "it didn't
         # hear me" report can be diagnosed from the raw mic audio instead of rms guesses.
         self._dump_capture(bytes(self._buf))
+        if self._run_is_cont and self._cont_pcm and (n < 1600 or not self._heard_speech):
+            # Nothing usable followed the cut: the partial is the utterance.
+            pcm, self._cont_pcm = self._cont_pcm, b""
+            self._buf = bytearray()
+            self._log(f"[cont] nothing followed; sending the stashed {len(pcm)}B")
+            asyncio.create_task(self._process(pcm))
+            return
         if n < 1600:
             self._log(f"[end] too little audio ({n}B), aborting")
             self._run_end()
@@ -569,6 +651,9 @@ class VoiceBridge:
             return
         pcm = bytes(self._buf)
         self._buf = bytearray()
+        if self._cont_pcm:
+            self._log(f"[cont] stitched {len(self._cont_pcm)}B + {len(pcm)}B")
+            pcm, self._cont_pcm = self._cont_pcm + pcm, b""
         asyncio.create_task(self._process(pcm))
 
     async def _serve_cue(self, cue: bytes):

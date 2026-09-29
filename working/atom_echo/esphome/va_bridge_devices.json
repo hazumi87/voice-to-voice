@@ -28,7 +28,9 @@
       "no_speech_timeout_s": 15,
       "max_utterance_s": 90,
       "listen_cue": true,
-      "_filler_comment": "beep = low-frequency ack tone (Eric 2026-09-28); 'jerma' = the voice clips under fillers/jerma"
+      "_filler_comment": "beep = low-frequency ack tone (Eric 2026-09-28); 'jerma' = the voice clips under fillers/jerma",
+      "silence_hang_room_s": 2.2,
+      "_hang_comment": "silence_hang_s applies in chat mode; silence_hang_room_s when the device's mode in voice_devices.json is development (room turns: composed messages with thinking pauses)"
     }
   ]
 }
