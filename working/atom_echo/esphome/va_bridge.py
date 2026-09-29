@@ -289,6 +289,10 @@ class VoiceBridge:
         self.silence_hang = float(dev.get("silence_hang_s", SILENCE_HANG))
         # Room turns are composed messages with thinking pauses: a longer hang, chat unchanged.
         self.silence_hang_room = float(dev.get("silence_hang_room_s", 0) or 0)
+        # Open-mic re-arm + continuation re-arm: OFF unless the roster says otherwise
+        # (Dot wedged 2026-09-29 during a re-arm window; kept off until EchoMuse's
+        # handling of re-armed start_conversation runs + the Action button is understood).
+        self.rearm_enabled = bool(dev.get("followup_rearm", False))
         self._hang_for_run = self.silence_hang
         self._no_speech_for_run = NO_SPEECH_TIMEOUT     # per-run value set in handle_start
         self._cont_pcm = b""                  # audio stashed from a device-cut run
@@ -547,6 +551,9 @@ class VoiceBridge:
         silence there), never past the cap."""
         if self._run_followup is None:
             return
+        if not self.rearm_enabled:
+            self._log("[followup] nothing heard; re-arm is OFF -> silent end")
+            return
         if self._loop.time() >= self._followup_window_until:
             self._log("[followup] window closed, nothing heard -> silent end")
             return
@@ -587,6 +594,13 @@ class VoiceBridge:
             self._buf = bytearray()
             self._cont_until = self._loop.time() + CONT_WINDOW_S
             self._cont_followup = self._run_followup if not self._run_is_cont else self._cont_followup
+            if not self.rearm_enabled:
+                # Re-arm is off: the partial IS the utterance (what happened before today).
+                pcm, self._cont_pcm = self._cont_pcm, b""
+                self._log(f"[cont] device cut mid-speech; re-arm is OFF -> sending {len(pcm)}B as is")
+                self._run_end()
+                asyncio.create_task(self._process(pcm))
+                return
             self._log(f"[cont] device cut mid-speech; stashed {len(self._cont_pcm)}B, re-arming")
             self._run_end()
             asyncio.create_task(self._rearm_continuation())
