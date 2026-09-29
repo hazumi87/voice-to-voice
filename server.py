@@ -303,8 +303,9 @@ _warmup_paths = ""          # which generate paths the post-load warmup actually
 # Load floor. Was 10.5 when OmniVoice was thought to hold ~8.4 GB; the GPU cop T9 (2026-09-28)
 # showed that was allocator cache: weights hold 2.2 GB, and the warmup peak (~9.7 GB) came from
 # cache piling up across the 12 custom-voice builds, now released per voice (7c1d80f).
-# 6.0 is PROVISIONAL until the per-voice warmup peak is measured; env override for tuning.
-TTS_MIN_FREE_VRAM_GB = float(os.environ.get("TTS_MIN_FREE_VRAM_GB", "6.0"))
+# Measured load peak (card-level): 4.7 GB at 2 s sampling (v2v), 5.4 GB at 0.5 s (asset-platform,
+# 2026-09-29 T9), so the floor is the peak + ~1 GB margin. Env override for tuning.
+TTS_MIN_FREE_VRAM_GB = float(os.environ.get("TTS_MIN_FREE_VRAM_GB", "6.5"))
 # The same floor in MiB for the GPU cop (torch's mem_get_info GB are GiB, so 10.5 -> 10752).
 # /gpu/status reports THIS number, so the cop's restart reservation can't drift from the check.
 TTS_FLOOR_MIB = int(TTS_MIN_FREE_VRAM_GB * 1024)
