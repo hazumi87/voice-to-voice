@@ -65,16 +65,16 @@
   // function color and --teal its documented done/ok function color (see
   // --jp-error/--jp-done, --mcp-err/--mcp-ok in tokens.css) -- never --coral,
   // which stays reserved for "waiting".
-  var WAVES_SLASH = '<path d="M4 4l16 16" stroke="var(--vfb-off)"></path>';
+  var WAVES_SLASH = '<path d="M4 4l16 16" stroke="var(--vfb-off)" stroke-width="2.4"></path>';
   // The check sits top-right, clear of the puck (y 14-21) and of the largest arc.
-  var WAVES_CHECK = '<path d="M16 5l2 2 4-4.5" stroke="var(--vfb-on)"></path>';
+  var WAVES_CHECK = '<path d="M16 5l2 2 4-4.5" stroke="var(--vfb-on)" stroke-width="2.4"></path>';
 
   // §10.1 idInRoom toggle glyph -- a small id-badge/shield outline. Off
   // (idInRoom false) draws the same outline plus a diagonal slash; the
   // color split (--dim idle / --text pressed) is handled entirely by CSS
   // (.idbtn / .idbtn[aria-pressed="true"]), not here.
   var ID_BADGE = '<path d="M12 3l6 2.4v4.3c0 4.6-2.6 7.9-6 9.3-3.4-1.4-6-4.7-6-9.3V5.4z"></path>';
-  var ID_SLASH = '<path d="M4 4l16 16"></path>';
+  var ID_SLASH = '<path d="M4 4l16 16" stroke="var(--vfb-off)" stroke-width="2.4"></path>';
 
   function post(msg) {
     window.__posted.push(msg);

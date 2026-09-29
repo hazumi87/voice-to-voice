@@ -125,11 +125,11 @@ button {
 }
 
 .mute svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
   flex: none;
@@ -168,11 +168,11 @@ button {
 }
 
 .openmic svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
   flex: none;
@@ -207,11 +207,11 @@ button {
 }
 
 .idbtn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
   flex: none;
@@ -262,11 +262,20 @@ button {
     width: 40px;
     height: 40px;
   }
+  .openmic svg,
+  .mute svg,
+  .idbtn svg {
+    width: 22px;
+    height: 22px;
+  }
   .disc {
     min-height: 40px;
     padding: 0 6px;
   }
 }
+
+/* Icon sizes match the room titlebar's settings icon, measured by vrpc-briefing-table in
+   real Edge: 18 px glyph at stroke 1.7 on desktop, 22 px on a phone; overlays 2.4. */
 
 /* ---------- exchanges ---------- */
 .empty-row {
