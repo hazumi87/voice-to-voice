@@ -602,7 +602,20 @@ def _release_tts():
     with _tts_load_lock, gpu_guard("gpu-release"):
         if tts_model is None:
             return 0
+        # Move the weights off the GPU BEFORE dropping the object: something outside the model
+        # keeps its HiggsAudioV2 audio tokenizer (768 MB fp32) alive, and its live blocks pin
+        # torch's segments so empty_cache() can't return them (measured 2026-09-29). Moving to
+        # CPU frees the GPU tensors whoever still holds the Python objects.
+        m = tts_model
         tts_model = None
+        for part in (getattr(m, "audio_tokenizer", None), m):
+            if part is None:
+                continue
+            try:
+                part.to("cpu")
+            except Exception as e:  # noqa: BLE001 - best effort; the gc pass below still runs
+                print(f"[gpu] release: moving {type(part).__name__} to cpu failed: {e}", flush=True)
+        del m
         custom_prompts.clear()
         _refclip_cache.clear()
         import gc
