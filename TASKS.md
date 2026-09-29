@@ -226,3 +226,15 @@
 - Measured on reload: loaded and warm in ~10 s; card-level peak ~4.7 GB; steady ~2.1 GB (torch) / 2.4 GB (counter);
   router llama3.2:3b 2.4 GB. Voice + router ~5 GB. Harbor manifest: floor 6144, run 2500, start_gate false.
 - Harbor froze ~21:46 PT (in-process PDH stall + asyncio closing :8210); fixed harbor-side in 2a12ba5, and Eric relaunched it.
+
+## 2026-09-29T07:10:00Z — Hold clips (Eric's go) + a working /gpu/release
+- hold_clips.py + converse hold path: a Dot turn arriving with TTS unloaded gets a pre-rendered clip in the speaker's
+  voice (warming/busy) in ~1.2 s. TTS loads through the cop gate in the background: one 'still' push at 25 s, a
+  'giveup' push at 120 s. The real reply is pushed via the announce path. 33/33 voices backfilled (working/hold_clips,
+  gitignored). Clips render on voice registration and are dropped on delete. GET /api/hold_clips, POST /api/hold_clips/render.
+- /gpu/release was freeing ~0: OmniVoice is freed only by the cycle collector after the call, and its
+  HiggsAudioV2 audio tokenizer (768 MB fp32) outlived it and pinned torch segments. The fix moves the tokenizer + model
+  to CPU before dropping them and keeps collecting for ~3 s. The load check counts v2v's own unused torch cache as free.
+  Verified by harbor's counter: 2325 -> 1123 MiB on release, reload via synth 15.5 s -> 2373.
+- GET /gpu/debug (?empty=1): torch allocated/reserved, OmniVoice referrers, largest CUDA tensors, owning modules.
+- Floor 6.5 GB (asset-platform measured a 5.4 GB load peak).
