@@ -179,6 +179,18 @@ class RoomVoiceState:
         ch = self.get(device).get("channelId") or ""
         return ch[len(ROOM_PREFIX):] if ch.startswith(ROOM_PREFIX) else None
 
+    def connected(self) -> list:
+        """[(device, room_id, room_name)] for every device with an open room connection.
+        The GPU cop reads this: an open connection makes v2v interactive."""
+        with self._lock:
+            rows = list(self._d.items())
+        out = []
+        for dev, row in rows:
+            ch = (row or {}).get("channelId") or ""
+            if ch.startswith(ROOM_PREFIX):
+                out.append((dev, ch[len(ROOM_PREFIX):], (row or {}).get("name") or ""))
+        return out
+
 
 # ---------------------------------------------------------------------------------
 # Spoken lines (deterministic control flow; server may restyle them in-character later)

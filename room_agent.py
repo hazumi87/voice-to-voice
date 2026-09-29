@@ -388,6 +388,8 @@ def extract_addressee(text: str) -> str | None:
 
 
 def _ollama_chat(messages: list, model: str, fmt, timeout: float, keep_alive: str) -> dict:
+    import gpu_cop_client  # GPU cop: don't load the router into space held for a restart
+    gpu_cop_client.router_gate(model)  # raises -> route() falls back to `lead` (never drops)
     payload = json.dumps({
         "model": model, "messages": messages, "stream": False, "format": fmt,
         "keep_alive": keep_alive,

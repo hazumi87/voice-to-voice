@@ -90,6 +90,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
+import gpu_cop_client  # harbor GPU traffic cop (gpu-cop/1): load gates + /gpu/status helpers
 OLLAMA_MODEL = "llama3.2:3b"  # smaller/faster for snappy turns
 
 # Appended to every personality so all replies stay short and TTS-friendly.
@@ -289,6 +290,8 @@ from omnivoice import OmniVoice
 TTS_SR = 24000              # OmniVoice sampling rate; refreshed from the model on load
 tts_model = None
 _tts_load_error = None
+_tts_loading = False        # True while from_pretrained runs (the cop's `loading` state)
+_tts_last_load_s = None     # measured load time of the last successful load (reload_cost_s)
 _tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
 # Renders since the current model instance loaded. Reset to 0 on each (re)load so we can
 # tell, per render, whether THIS was the cold first generate after a load — the state that
@@ -298,6 +301,9 @@ _warmup_paths = ""          # which generate paths the post-load warmup actually
 
 
 TTS_MIN_FREE_VRAM_GB = 10.5  # OmniVoice resident ~8GB; require headroom (Ollama evicted first)
+# The same floor in MiB for the GPU cop (torch's mem_get_info GB are GiB, so 10.5 -> 10752).
+# /gpu/status reports THIS number, so the cop's restart reservation can't drift from the check.
+TTS_FLOOR_MIB = int(TTS_MIN_FREE_VRAM_GB * 1024)
 
 
 def _free_vram_gb():
@@ -332,27 +338,39 @@ def _load_tts_model():
     to attempt the load when there isn't enough headroom — that's what prevents the
     crash-loop, not a try/except. The server runs fine without TTS (avatar/STT/chat
     don't need it); synth routes 503 until VRAM frees and a later call loads it."""
-    global tts_model, TTS_SR, _tts_load_error
+    global tts_model, TTS_SR, _tts_load_error, _tts_loading, _tts_last_load_s
     if tts_model is not None:
         return True
     _evict_ollama()  # free VRAM before measuring + allocating — Ollama reloads on demand
+    # GPU traffic cop (schema §4): free - reserved >= floor, ignoring our own restart
+    # reservation. Cop down/slow -> None -> the local check below decides, as before.
+    wait = gpu_cop_client.tts_gate(TTS_FLOOR_MIB)
+    if wait:
+        _tts_load_error = wait
+        print(f"[tts] load skipped — {wait}", flush=True)
+        return False
     free = _free_vram_gb()
     if free is not None and free < TTS_MIN_FREE_VRAM_GB:
         _tts_load_error = (f"insufficient VRAM: {free:.1f}GB free < {TTS_MIN_FREE_VRAM_GB}GB needed "
                            f"(free VRAM, e.g. unload Ollama, then retry)")
         print(f"[tts] load skipped — {_tts_load_error}", flush=True)
         return False
+    _tts_loading = True
+    t0 = time.time()
     try:
         m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cuda:0", dtype=torch.float16)
         tts_model = m
         TTS_SR = m.sampling_rate
         _tts_load_error = None
-        print(f"[init] TTS ready, sr={TTS_SR}", flush=True)
+        _tts_last_load_s = round(time.time() - t0, 1)
+        print(f"[init] TTS ready, sr={TTS_SR} (load {_tts_last_load_s}s)", flush=True)
         return True
     except Exception as e:  # noqa: BLE001
         _tts_load_error = str(e)
         print(f"[tts] OmniVoice load failed: {e}", flush=True)
         return False
+    finally:
+        _tts_loading = False
 
 
 # DEFERRED by default: do NOT load OmniVoice at import time. Loading it at startup meant a
@@ -468,6 +486,160 @@ import speaker_id  # ECAPA speaker identification (closed-set personalization)
 
 app = FastAPI(title="voice-to-voice prototype")
 
+# ---------------------------------------------------------------------------------
+# GPU traffic cop (harbor gpu-cop/1; F:\Code\harbor\docs\gpu-cop-schema.md)
+# A "turn" = a request that uses the models for a person. While one is in flight, or a room
+# voice connection is open, v2v is INTERACTIVE: never released, never restart-safe.
+# ---------------------------------------------------------------------------------
+_TURN_PATHS = ("/api/converse", "/api/send_text", "/api/voice/deliver", "/synthesize",
+               "/api/voices/custom", "/api/voices/register", "/api/stt")
+_turns = {"n": 0, "last": None}
+_turns_lock = threading.Lock()
+_gpu_draining = {"on": False}
+
+
+@app.middleware("http")
+async def _gpu_turn_tracker(request: Request, call_next):
+    if request.method != "POST" or not request.url.path.startswith(_TURN_PATHS):
+        return await call_next(request)
+    if _gpu_draining["on"]:
+        return JSONResponse({"error": "gpu_draining",
+                             "detail": "GPU reserved for another app; voice resumes shortly"},
+                            status_code=503)
+    with _turns_lock:
+        _turns["n"] += 1
+    try:
+        return await call_next(request)
+    finally:
+        with _turns_lock:
+            _turns["n"] -= 1
+            _turns["last"] = time.time()
+
+
+def _gpu_rooms():
+    try:
+        return _room_state.connected()
+    except NameError:  # room section not initialised yet (import order)
+        return []
+
+
+def _torch_reserved_mib():
+    try:
+        return int(torch.cuda.memory_reserved() / (1024 * 1024))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _gpu_status_body():
+    rooms = _gpu_rooms()
+    with _turns_lock:
+        inflight, last = _turns["n"], _turns["last"]
+    interactive = bool(rooms) or inflight > 0
+    if _tts_loading:
+        state = "loading"
+    elif tts_model is not None:
+        state = "loaded"
+    else:
+        state = "unloaded"
+    body = {
+        "state": state,
+        "mode": "resident",
+        "interactive": interactive,
+        "restart_safe": (not interactive) and not _tts_loading and _gpu_inflight["op"] is None,
+        "vram_held_mib": _torch_reserved_mib(),
+        "floor_mib": TTS_FLOOR_MIB,
+        "vram_run_mib": 8376,
+        "active_jobs": inflight,
+        "queued_jobs": 0,
+        "last_activity_at": (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last)) if last else None),
+        "load_error": (_tts_load_error if tts_model is None and not _tts_loading else None),
+        "router_resident_mib": gpu_cop_client.router_resident_mib(
+            [OLLAMA_MODEL, getattr(room_agent, "ROUTER_MODEL", None)] if "room_agent" in globals()
+            else [OLLAMA_MODEL]),
+    }
+    if _tts_last_load_s is not None:
+        body["reload_cost_s"] = int(round(_tts_last_load_s)) + 30  # + post-load warmup
+    if rooms:
+        body["current_job"] = {"id": rooms[0][0], "initiator": "user",
+                               "room": {"id": rooms[0][1], "name": rooms[0][2]}}
+    return body
+
+
+def _interactive_refusal():
+    rooms = _gpu_rooms()
+    if rooms:
+        return f"voice connected in room {rooms[0][2] or rooms[0][1]}: disconnect it to free the GPU"
+    with _turns_lock:
+        n = _turns["n"]
+    if n:
+        return f"busy: {n} voice turn(s) in flight"
+    return None
+
+
+def _release_tts():
+    """Unload OmniVoice and its GPU clone prompts; keep the process (STT, speaker ID, the
+    web app) up. The next synth reloads lazily, through the same cop gate."""
+    global tts_model
+    before = _torch_reserved_mib() or 0
+    with _tts_load_lock, gpu_guard("gpu-release"):
+        if tts_model is None:
+            return 0
+        tts_model = None
+        custom_prompts.clear()
+        _refclip_cache.clear()
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+    _evict_ollama()
+    after = _torch_reserved_mib() or 0
+    print(f"[gpu] released OmniVoice: {before} -> {after} MiB (torch reserved)", flush=True)
+    return max(0, before - after)
+
+
+@app.get("/gpu/status")
+def gpu_status():
+    return _gpu_status_body()
+
+
+@app.post("/gpu/release")
+def gpu_release():
+    why = _interactive_refusal()
+    if why:
+        return JSONResponse({"released": False, "reason": why}, status_code=409)
+    try:
+        freed = _release_tts()
+    except GpuBusy as e:
+        return JSONResponse({"released": False, "reason": str(e)}, status_code=409)
+    return {"released": True, "freed_mib": freed}
+
+
+@app.post("/gpu/drain")
+def gpu_drain(wait_s: float = 60.0):
+    """No new turns; wait for in-flight ones (bounded), then release. An open room voice
+    connection refuses: draining would drop Eric's live session."""
+    rooms = _gpu_rooms()
+    if rooms:
+        return JSONResponse({"drained": False, "reason": _interactive_refusal()}, status_code=409)
+    _gpu_draining["on"] = True
+    try:
+        deadline = time.time() + max(0.0, min(wait_s, 300.0))
+        while time.time() < deadline:
+            with _turns_lock:
+                if _turns["n"] == 0:
+                    break
+            time.sleep(0.25)
+        with _turns_lock:
+            left = _turns["n"]
+        if left:
+            return JSONResponse({"drained": False, "reason": f"{left} turn(s) still in flight"},
+                                status_code=409)
+        freed = _release_tts()
+        return {"drained": True, "freed_mib": freed}
+    except GpuBusy as e:
+        return JSONResponse({"drained": False, "reason": str(e)}, status_code=409)
+    finally:
+        _gpu_draining["on"] = False
+
 # Browser consumers (e.g. the NUC asset-library audition player at http://hazwebserver)
 # call /synthesize_ref cross-origin. A multipart POST triggers a CORS preflight (OPTIONS),
 # so the service must answer it AND advertise Access-Control-Allow-Origin on the response.
@@ -506,6 +678,7 @@ def transcribe(audio_bytes: bytes) -> str:
 def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
          speaker_name: str = None, history_key: str = "guest",
          style: str = None) -> str:
+    gpu_cop_client.router_gate(OLLAMA_MODEL)  # before the history append: a refusal leaves no dangling turn
     persona = PERSONALITY_BY_ID.get(personality_id, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
     system = persona["system"] + VOICE_STYLE
     # Personalization: if speaker ID recognized who is talking, tell the agent so it
@@ -598,6 +771,7 @@ def reword(text: str, personality_id: str = DEFAULT_PERSONALITY, strength: str =
     text = (text or "").strip()
     if not text or strength == "none":
         return text
+    gpu_cop_client.router_gate(OLLAMA_MODEL)
     instr = REWORD_STRENGTH.get(strength, REWORD_STRENGTH["full"])
     persona = PERSONALITY_BY_ID.get(personality_id, PERSONALITY_BY_ID[DEFAULT_PERSONALITY])
     # The persona's own system prompt establishes WHO the character is; instr says
@@ -650,6 +824,7 @@ CHAT_HISTORY_TURNS = 12   # most recent user/assistant messages kept
 
 def _ollama_chat(messages, num_predict=200, num_ctx=None, temperature=0.7):
     """One stateless Ollama chat call. Returns the assistant text (stripped)."""
+    gpu_cop_client.router_gate(OLLAMA_MODEL)
     options = {"temperature": temperature, "num_predict": num_predict}
     if num_ctx:
         options["num_ctx"] = num_ctx
@@ -1983,6 +2158,8 @@ def send_text(text: str = Form(...), voice: str = Form(DEFAULT_VOICE),
         return JSONResponse({"error": "empty"}, status_code=400)
     try:
         reply = chat(text, personality)
+    except gpu_cop_client.RouterGpuWait as e:
+        reply = str(e)  # spoken: the GPU is busy and who has it, never a silent 503
     except Exception as e:  # noqa: BLE001
         msg = ("ollama unreachable on 127.0.0.1:11434 - has the gaming GPU-shutdown "
                ".bat been run? Restart OllamaService and retry.")
@@ -2412,6 +2589,8 @@ def converse(audio: UploadFile = File(...), voice: str = Form(DEFAULT_VOICE),
     try:
         reply = chat(transcript, personality, speaker_name=spk_name,
                      history_key=history_key, style=spk_style)
+    except gpu_cop_client.RouterGpuWait as e:
+        reply = str(e)  # spoken: the GPU is busy and who has it, never a silent 503
     except Exception as e:  # noqa: BLE001
         msg = ("ollama unreachable on 127.0.0.1:11434 - has the gaming GPU-shutdown "
                ".bat been run? Restart OllamaService and retry.")
