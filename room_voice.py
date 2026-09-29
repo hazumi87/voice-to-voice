@@ -574,9 +574,14 @@ class RoomVoice:
         """POST /said {action:"say"}: the voice agent's own spoken line becomes a voice line
         in the room (E1 v3.5). Best-effort; a failure never blocks the spoken reply."""
         try:
-            self.engine.said(room_id, {"utteranceId": utterance_id or f"say-{int(time.time() * 1000)}",
-                                       "text": transcript or "", "device": device, "sid": sid or "",
-                                       "action": "say", "answer": line, "confidence": 1.0})
+            status, body = self.engine.said(
+                room_id, {"utteranceId": utterance_id or f"say-{int(time.time() * 1000)}",
+                          "text": transcript or "", "device": device, "sid": sid or "",
+                          "action": "say", "answer": line, "confidence": 1.0})
+            if status != 200:
+                # Until engine v3.5 is live this is a 400 ("action must be answer|ignore"):
+                # logged, never retried, never spoken, never part of the turn's outcome.
+                self.log(f"[room] /said say -> {status} {str(body)[:120]} (line not recorded)")
         except Exception as e:  # noqa: BLE001
             self.log(f"[room] /said say failed: {e!r}")
 
