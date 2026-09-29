@@ -261,8 +261,8 @@
     muteBtn.title = muted ? "Unmute agent voice" : "Mute agent voice";
     muteBtn.innerHTML = '<svg viewBox="0 0 24 24">' + WAVES_OUT +
       (muted ? WAVES_SLASH : "") + '</svg>';
-    muteBtn.disabled = !connected;
-    disconnectBtn.disabled = !connected;
+    muteBtn.disabled = false;   // never greyed on the frame's own view of "connected": the host judges (§9.2); a stale frame state greyed Disconnect on 2026-09-29
+    disconnectBtn.disabled = false;   // never greyed on the frame's own view of "connected": the host judges (§9.2); a stale frame state greyed Disconnect on 2026-09-29
   }
 
   // §9/§10.1 open-mic-after-replies toggle. A SETTING button, not a live
@@ -278,7 +278,7 @@
     openMicBtn.title = openMicBtn.getAttribute("aria-label");
     openMicBtn.innerHTML = '<svg viewBox="0 0 24 24">' + WAVES_IN +
       (openMic ? WAVES_CHECK : WAVES_SLASH) + '</svg>';
-    openMicBtn.disabled = !connected;
+    openMicBtn.disabled = false;   // never greyed on the frame's own view of "connected": the host judges (§9.2); a stale frame state greyed Disconnect on 2026-09-29
   }
 
   // §10.1 security toggle idInRoom. Same rule as Mute: shows only the last
@@ -289,7 +289,7 @@
     idBtn.title = idInRoom ? "Voice ID on" : "Voice ID off";
     idBtn.innerHTML = '<svg viewBox="0 0 24 24">' + ID_BADGE +
       (idInRoom ? "" : ID_SLASH) + '</svg>';
-    idBtn.disabled = !connected;
+    idBtn.disabled = false;   // never greyed on the frame's own view of "connected": the host judges (§9.2); a stale frame state greyed Disconnect on 2026-09-29
   }
 
   // The CONTENT height (the .fr root -- never the document): .exs's own
