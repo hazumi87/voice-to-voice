@@ -290,6 +290,7 @@ class VoiceBridge:
         # Room turns are composed messages with thinking pauses: a longer hang, chat unchanged.
         self.silence_hang_room = float(dev.get("silence_hang_room_s", 0) or 0)
         self._hang_for_run = self.silence_hang
+        self._no_speech_for_run = self.no_speech_timeout
         self._cont_pcm = b""                  # audio stashed from a device-cut run
         self._cont_until = 0.0                # loop time; continuation window end
         self._cont_followup = None            # the cut run's follow-up marker
@@ -410,6 +411,14 @@ class VoiceBridge:
         mode = _device_mode(self.dev_id)
         self._hang_for_run = (self.silence_hang_room if (mode == "development" and self.silence_hang_room)
                               else self.silence_hang)
+        if self._run_followup is not None and not self._run_is_cont:
+            # An open-mic run only needs to wait for the rest of the window, not 15 s.
+            left = self._followup_window_until - now
+            self._no_speech_for_run = max(1.5, min(self.no_speech_timeout, left if left > 0 else 1.5))
+        elif self._run_is_cont:
+            self._no_speech_for_run = CONT_WINDOW_S + 0.5
+        else:
+            self._no_speech_for_run = self.no_speech_timeout
         if self._run_is_cont:
             self._log(f"[cont] continuation run ({len(self._cont_pcm)}B stashed, "
                       f"window {max(0.0, self._cont_until - now):.1f}s)")
@@ -503,7 +512,7 @@ class VoiceBridge:
                     return
                 now = self._loop.time()
                 if not self._heard_speech:
-                    if now - self._start_t > self.no_speech_timeout:
+                    if now - self._start_t > self._no_speech_for_run:
                         self._log("[watchdog] no speech detected — aborting")
                         await self._abort()
                         return
@@ -521,6 +530,12 @@ class VoiceBridge:
         self._processing = True
         self.client.send_voice_assistant_event(EV.VOICE_ASSISTANT_STT_VAD_END, {})
         self._run_end()
+        if self._run_is_cont and self._cont_pcm:
+            pcm, self._cont_pcm = self._cont_pcm, b""
+            self._log(f"[cont] nothing followed (watchdog); sending the stashed {len(pcm)}B")
+            asyncio.create_task(self._process(pcm))
+            return
+        self._maybe_rearm_followup()
 
     def _open_followup_window(self):
         self._followup_window_until = self._loop.time() + FOLLOWUP_WINDOW_S
