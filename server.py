@@ -350,12 +350,20 @@ def _load_tts_model():
     _evict_ollama()  # free VRAM before measuring + allocating — Ollama reloads on demand
     # GPU traffic cop (schema §4): free - reserved >= floor, ignoring our own restart
     # reservation. Cop down/slow -> None -> the local check below decides, as before.
-    wait = gpu_cop_client.tts_gate(TTS_FLOOR_MIB)
+    # Our own torch cache (reserved but unused, e.g. left after a /gpu/release) is reused by the
+    # load, so it counts as free for us even though nvidia-smi and mem_get_info don't see it.
+    try:
+        own_cache_mib = max(0, int((torch.cuda.memory_reserved() - torch.cuda.memory_allocated()) / 2**20))
+    except Exception:  # noqa: BLE001
+        own_cache_mib = 0
+    wait = gpu_cop_client.tts_gate(TTS_FLOOR_MIB, own_cache_mib)
     if wait:
         _tts_load_error = wait
         print(f"[tts] load skipped — {wait}", flush=True)
         return False
     free = _free_vram_gb()
+    if free is not None:
+        free += own_cache_mib / 1024
     if free is not None and free < TTS_MIN_FREE_VRAM_GB:
         _tts_load_error = (f"insufficient VRAM: {free:.1f}GB free < {TTS_MIN_FREE_VRAM_GB}GB needed "
                            f"(free VRAM, e.g. unload Ollama, then retry)")

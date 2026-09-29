@@ -108,9 +108,13 @@ def check_load(floor_mib: int, exclude_self: bool):
     return False, _blocker_text(st, exclude_self), headroom
 
 
-def tts_gate(floor_mib: int):
-    """Before OmniVoice loads. Returns None to proceed, else a load_error string."""
-    ok, why, headroom = check_load(floor_mib, exclude_self=True)
+def tts_gate(floor_mib: int, own_cache_mib: int = 0):
+    """Before OmniVoice loads. Returns None to proceed, else a load_error string.
+    own_cache_mib: memory this process already holds in torch's cache but isn't using. The
+    load reuses it, so it counts as free for us (it's invisible in nvidia-smi's free)."""
+    ok, why, headroom = check_load(max(0, floor_mib - own_cache_mib), exclude_self=True)
+    if headroom is not None:
+        headroom += own_cache_mib
     if ok:
         return None
     return (f"waiting for GPU: {why} (need {floor_mib / 1024:.1f} GB free, "
