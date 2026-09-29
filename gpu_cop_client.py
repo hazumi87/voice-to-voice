@@ -77,15 +77,18 @@ def _blocker_text(st: dict, exclude_self: bool) -> str:
             continue
         if r.get("enforced"):
             return f"{r.get('service')} is restarting"
-    rows = sorted((s for s in (st.get("services") or []) if (s.get("held_mib") or 0) > 0
-                   and s.get("name") != SERVICE),
-                  key=lambda s: -(s.get("held_mib") or 0))
-    unm = sorted((u for u in (st.get("unmanaged") or []) if u.get("for_service") != SERVICE),
-                 key=lambda u: -(u.get("mib") or 0))
-    if rows:
-        return f"{rows[0]['name']} is holding {rows[0]['held_mib'] / 1024:.1f} GB"
-    if unm:
-        return f"{unm[0]['name']} is holding {unm[0]['mib'] / 1024:.1f} GB"
+    # The biggest holder across harbor services AND unmanaged processes (an unmanaged
+    # Ollama runner can outweigh every service). An unmanaged row attributed to a service
+    # is named after that service.
+    holders = [(s.get("held_mib") or 0, s.get("name")) for s in (st.get("services") or [])
+               if s.get("name") != SERVICE]
+    holders += [(u.get("mib") or 0, (f"{u['for_service']} ({u.get('name')})" if u.get("for_service")
+                                     else u.get("name")))
+                for u in (st.get("unmanaged") or []) if u.get("for_service") != SERVICE]
+    holders = [h for h in holders if h[0] > 0]
+    if holders:
+        mib, name = max(holders)
+        return f"{name} is holding {mib / 1024:.1f} GB"
     return "another app is using it"
 
 

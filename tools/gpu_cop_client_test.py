@@ -107,6 +107,12 @@ FAKE["state"] = state(6100, 0, [], [{"name": "asset-platform-krea", "held_mib": 
 w = g.tts_gate(10752)
 check("krea holds: tts blocked with name", w is not None and "asset-platform-krea" in w)
 
+# unmanaged holder bigger than any service: named
+FAKE["state"] = state(8800, 0, [], [{"name": "hearthos-livetv-captions", "held_mib": 2177}] + svc,
+                      [{"name": "llama-server", "mib": 2707, "for_service": "hearthos-livetv-ocr"}])
+w = g.tts_gate(10752)
+check("biggest holder named (unmanaged, attributed)", w is not None and "hearthos-livetv-ocr (llama-server)" in w)
+
 # plenty of room, someone else reserving -> subtract theirs
 other = [{"service": "asset-platform-krea", "floor_mib": 3500, "enforced": True}]
 FAKE["state"] = state(14500, 3500, other, svc)
