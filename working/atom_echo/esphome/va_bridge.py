@@ -98,7 +98,8 @@ FOLLOWUP_REARM_GUARD_S = 0.1
 # following within CONT_WINDOW_S -> the partial goes to STT as it is.
 CONT_WINDOW_S = 2.5
 # Device-table path (server.py writes `mode` per device there; hot-read by mtime).
-_VOICE_DEVICES_PATH = os.path.join(_BRIDGE_DIR, "..", "..", "..", "voice_devices.json")
+_VOICE_DEVICES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+                                   "voice_devices.json")
 _devices_cache = {"mtime": 0.0, "data": {}}
 
 
