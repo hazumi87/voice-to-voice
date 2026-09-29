@@ -552,7 +552,7 @@ def _gpu_status_body():
         "restart_safe": (not interactive) and not _tts_loading and _gpu_inflight["op"] is None,
         "vram_held_mib": _torch_reserved_mib(),
         "floor_mib": TTS_FLOOR_MIB,
-        "vram_run_mib": 8376,
+        "vram_run_mib": 2500,  # measured steady ~2.1 GB torch / 2.4 GB counter (2026-09-29)
         "active_jobs": inflight,
         "queued_jobs": 0,
         "last_activity_at": (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last)) if last else None),
