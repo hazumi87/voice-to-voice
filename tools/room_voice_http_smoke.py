@@ -77,10 +77,12 @@ def main():
     st, b = call(S, tok, "POST", "/api/voice/deliver", {"device": "nope", "text": "x" * 2100, "overCap": "summarize"})
     check("deliver 2100 chars with summarize -> 413 at 2000", st == 413 and b.get("max") == 2000, f"{st} max={b.get('max')}")
 
-    st, b = call(S, tok, "POST", f"/api/voice/devices/{D}/state", {"channelId": "", "connected": False})
-    check("state POST clear (idempotent when not connected)", st == 200 and b.get("connected") is False, f"{st} {json.dumps(b)[:120]}")
+    # The clear is exercised on the FIXTURE device only. On 2026-09-29 this smoke cleared the
+    # live Dot's room connection (the engine still had it open) right after a restart.
+    st, b = call(S, tok, "POST", "/api/voice/devices/fixture-dot/state", {"channelId": "", "connected": False})
+    check("state POST clear on fixture-dot", st == 200 and b.get("connected") is False, f"{st} {json.dumps(b)[:120]}")
     if was_connected:
-        print("  note: the device WAS connected before this smoke; the clear above disconnected it locally (engine not told).")
+        print(f"  note: {D} is connected to a room; left untouched.")
 
     print("\n" + ("FAILURES: " + str(FAILS) if FAILS else "ALL PASS"))
     sys.exit(1 if FAILS else 0)
