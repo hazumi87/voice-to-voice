@@ -293,6 +293,8 @@ tts_model = None
 _tts_load_error = None
 _tts_loading = False        # True while from_pretrained runs (the cop's `loading` state)
 _tts_last_load_s = None     # measured load time of the last successful load (reload_cost_s)
+_tts_lease_id = None        # GPU cop lease held from load start through warmup (gpu-cop/2)
+_tts_load_initiator = "agent:voice-to-voice"   # "user" while a person's turn waits on the load
 _tts_load_lock = threading.RLock()   # reentrant: ensure_tts -> rebuild -> build_clone_prompt
 # Renders since the current model instance loaded. Reset to 0 on each (re)load so we can
 # tell, per render, whether THIS was the cold first generate after a load — the state that
@@ -310,6 +312,14 @@ TTS_MIN_FREE_VRAM_GB = float(os.environ.get("TTS_MIN_FREE_VRAM_GB", "6.5"))
 # The same floor in MiB for the GPU cop (torch's mem_get_info GB are GiB, so 10.5 -> 10752).
 # /gpu/status reports THIS number, so the cop's restart reservation can't drift from the check.
 TTS_FLOOR_MIB = int(TTS_MIN_FREE_VRAM_GB * 1024)
+
+
+def _tts_lease_done():
+    """Give the load's GPU lease back (after warmup, or when the load didn't happen)."""
+    global _tts_lease_id
+    lid, _tts_lease_id = _tts_lease_id, None
+    if lid:
+        gpu_cop_client.release_lease(lid)
 
 
 def _free_vram_gb():
@@ -356,7 +366,23 @@ def _load_tts_model():
         own_cache_mib = max(0, int((torch.cuda.memory_reserved() - torch.cuda.memory_allocated()) / 2**20))
     except Exception:  # noqa: BLE001
         own_cache_mib = 0
-    wait = gpu_cop_client.tts_gate(TTS_FLOOR_MIB, own_cache_mib)
+    # gpu-cop/2 lease for the load (want = min = the floor). granted -> load; wait -> report the
+    # cop's reason and return (the held turn re-asks every 5 s, which keeps our queue place);
+    # no token / cop down -> the §4 check below, as before.
+    global _tts_lease_id
+    ans = gpu_cop_client.lease(max(0, TTS_FLOOR_MIB - own_cache_mib), max(0, TTS_FLOOR_MIB - own_cache_mib),
+                               60, _tts_load_initiator, "OmniVoice load + voice warmup")
+    if ans and ans["status"] != "granted":
+        _tts_load_error = (gpu_cop_client.wait_text(ans) if ans["status"] == "wait"
+                           else f"GPU lease refused: {ans.get('reason')}")
+        print(f"[tts] load skipped — {_tts_load_error}", flush=True)
+        return False
+    if ans:
+        _tts_lease_id = ans.get("lease_id")
+        print(f"[tts] GPU lease granted {ans.get('granted_mib')} MiB ({_tts_load_initiator})", flush=True)
+        wait = None
+    else:
+        wait = gpu_cop_client.tts_gate(TTS_FLOOR_MIB, own_cache_mib)
     if wait:
         _tts_load_error = wait
         print(f"[tts] load skipped — {wait}", flush=True)
@@ -368,6 +394,7 @@ def _load_tts_model():
         _tts_load_error = (f"insufficient VRAM: {free:.1f}GB free < {TTS_MIN_FREE_VRAM_GB}GB needed "
                            f"(free VRAM, e.g. unload Ollama, then retry)")
         print(f"[tts] load skipped — {_tts_load_error}", flush=True)
+        _tts_lease_done()
         return False
     _tts_loading = True
     t0 = time.time()
@@ -382,6 +409,7 @@ def _load_tts_model():
     except Exception as e:  # noqa: BLE001
         _tts_load_error = str(e)
         print(f"[tts] OmniVoice load failed: {e}", flush=True)
+        _tts_lease_done()
         return False
     finally:
         _tts_loading = False
@@ -1339,6 +1367,7 @@ def _post_load_setup():
               f"{torch.cuda.memory_reserved() // 2**20} MiB reserved", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[tts] post-warmup cache release skipped: {e}", flush=True)
+    _tts_lease_done()
     _hold_backfill_bg()
 
 
@@ -2865,12 +2894,17 @@ def _hold_push(dev, wav):
 def _hold_finish(dev, device, transcript, personality, spk_name, history_key, spk_style,
                  voice, tuning):
     """Load TTS (through the cop gate, retrying while the GPU is taken), then answer."""
+    global _tts_load_initiator
     t0 = time.time()
     still_sent = False
     try:
         while True:
             try:
-                ensure_tts()
+                _tts_load_initiator = "user"   # a person is waiting: user priority in the cop's queue
+                try:
+                    ensure_tts()
+                finally:
+                    _tts_load_initiator = "agent:voice-to-voice"
                 break
             except Exception as e:  # noqa: BLE001 - blocked by the cop / not enough VRAM
                 waited = time.time() - t0

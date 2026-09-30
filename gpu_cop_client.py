@@ -162,3 +162,61 @@ def router_gate(model: str) -> None:
     print(f"[gpu] router gate: not loading {model}: {why} "
           f"(headroom {headroom} MiB < {ROUTER_FLOOR_MIB})", flush=True)
     raise RouterGpuWait(f"The GPU is busy right now: {why}. Try me again in a minute.")
+
+
+# ---------------------------------------------------------------------------------
+# Leases (gpu-cop/2, harbor docs/gpu-cop-schema.md §7). harbor injects HARBOR_GPU_TOKEN into
+# the services it launches; without it (adopted process) or with the cop down, callers fall
+# back to the §4 check above.
+# ---------------------------------------------------------------------------------
+COP_BASE = COP_STATE_URL.rsplit("/gpu/", 1)[0]
+
+
+def _token():
+    return os.environ.get("HARBOR_GPU_TOKEN") or None
+
+
+def _post_json(url: str, body: dict, timeout: float):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          "Authorization": f"Bearer {_token()}"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def lease(want_mib: int, min_mib: int, expected_s: int, initiator: str, reason: str,
+          room: dict = None):
+    """Ask the cop for a lease. Returns its answer dict ({status: granted|wait|refused, ...}),
+    or None when there's no token or the cop didn't answer (use the §4 rule instead).
+    Re-POST the same request (<= every 30 s) to keep a place in the queue."""
+    if not _token():
+        return None
+    body = {"want_mib": int(want_mib), "min_mib": int(min_mib), "expected_s": int(expected_s),
+            "initiator": initiator, "reason": reason}
+    if room:
+        body["room"] = room
+    try:
+        ans = _post_json(f"{COP_BASE}/gpu/lease", body, COP_TIMEOUT_S)
+    except Exception:  # noqa: BLE001 - cop down never blocks voice
+        return None
+    return ans if isinstance(ans, dict) and ans.get("status") else None
+
+
+def release_lease(lease_id: str) -> bool:
+    if not (lease_id and _token()):
+        return False
+    try:
+        _post_json(f"{COP_BASE}/gpu/lease/{lease_id}/release", {}, COP_TIMEOUT_S)
+        return True
+    except Exception:  # noqa: BLE001 - the cop also drops it at 2 x expected_s / process exit
+        return False
+
+
+def wait_text(ans: dict) -> str:
+    """A lease 'wait' answer -> a load_error people can act on (the cop's own why phrases)."""
+    whys = [b.get("why") or f"{b.get('service')} {round((b.get('mib') or 0) / 1024, 1)} GB"
+            for b in (ans.get("blocked_by") or [])]
+    extra = ""
+    if ans.get("reclaiming"):
+        extra = f"; freeing {', '.join(ans['reclaiming'])}"
+    return f"waiting for GPU (queue position {ans.get('position', '?')}): " + "; ".join(whys) + extra
