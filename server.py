@@ -1860,13 +1860,14 @@ def _paraphrase_for_tts(text: str, level: str, char: dict | None) -> str:
                                 num_predict=80, temperature=0.5 if level == "med" else 0.7) or "").strip()
         out = _strip_stage_directions(out).strip().strip('"').strip()
         words = out.split()
-        if not out or len(words) > max(8, min(30, 2 * len(text.split()))):
+        n_in = len(text.split())
+        if not out or len(words) > max(4, min(30, 2 * n_in)):
             return text
         low = out.lower()
         if any(tok in low for tok in _STYLE_BAD_TOKENS):
             return text
-        if is_q and not out.endswith("?"):
-            out = out.rstrip(".!") + "?"
+        if is_q:
+            out = out.rstrip(".!? ") + "?"     # "leh.?" and "leh." both become "leh?"
         return out
     except Exception as e:  # noqa: BLE001 — never block the clip on the reworder
         print(f"[voice/tts] paraphrase {level} failed ({e!r}); verbatim", flush=True)
