@@ -16,6 +16,7 @@ Production note: this is a prove-it prototype. Nothing here is harbor-supervised
 and it touches no production service (neutts :8220, agent-speech-relay).
 """
 import contextlib
+import asyncio
 import io
 import os
 import re
@@ -809,6 +810,30 @@ def transcribe(audio_bytes: bytes) -> str:
         )
         text = " ".join(seg.text for seg in segments).strip()
     return text
+
+
+def transcribe_detail(audio_bytes: bytes) -> dict:
+    """Transcript WITH per-word and per-segment times (conversation test page, 2026-10-14):
+    the page measures speech length and pauses from these, not from the mic level."""
+    t0 = time.time()
+    with stt_lock:
+        segments, info = stt_model.transcribe(
+            io.BytesIO(audio_bytes), language="en", beam_size=1, word_timestamps=True
+        )
+        words, segs = [], []
+        for seg in segments:
+            segs.append({"text": seg.text.strip(), "start": round(float(seg.start), 3),
+                         "end": round(float(seg.end), 3)})
+            for w in (seg.words or []):
+                words.append({"w": w.word.strip(), "start": round(float(w.start), 3),
+                              "end": round(float(w.end), 3),
+                              "p": round(float(getattr(w, "probability", 0.0) or 0.0), 3)})
+    text = " ".join(s["text"] for s in segs).strip()
+    return {"text": text, "words": words, "segments": segs,
+            "duration_s": round(float(getattr(info, "duration", 0.0) or 0.0), 3),
+            "speech_s": round((words[-1]["end"] - words[0]["start"]) if words else 0.0, 3),
+            "word_count": len(words), "language": getattr(info, "language", "en"),
+            "stt_ms": int((time.time() - t0) * 1000)}
 
 
 def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
@@ -1773,6 +1798,48 @@ def get_personalities():
                            "group": p.get("group", "Other")} for p in PERSONALITIES],
         "default": DEFAULT_PERSONALITY,
     }
+
+
+@app.post("/api/voice/stt")
+async def voice_stt(request: Request):
+    """Conversation test page (engine proxies it): audio in, transcript + word times out.
+    Bearer like every /api/voice/* route. Body: multipart with field `audio`, or the raw
+    audio bytes (WAV or anything PyAV decodes). No chat, no speaker ID, no history."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    ctype = (request.headers.get("content-type") or "").lower()
+    raw = b""
+    if ctype.startswith("multipart/"):
+        form = await request.form()
+        up = form.get("audio") or form.get("file")
+        if up is not None and hasattr(up, "read"):
+            raw = await up.read()
+    else:
+        raw = await request.body()
+    if not raw or len(raw) < 100:
+        return JSONResponse({"error": "empty_audio"}, status_code=400)
+    if len(raw) > 8 * 1024 * 1024:
+        return JSONResponse({"error": "too_large", "max_bytes": 8 * 1024 * 1024}, status_code=413)
+    _stt_log(f"[voice/stt] {who}: {len(raw)} bytes")
+    try:
+        out = await asyncio.get_event_loop().run_in_executor(None, transcribe_detail, raw)
+    except Exception as e:  # noqa: BLE001
+        _stt_log(f"[voice/stt] FAILED: {e!r}")
+        return JSONResponse({"error": "stt_failed", "detail": str(e)}, status_code=500)
+    out["caller"] = who
+    return out
+
+
+@app.post("/api/voice/tts")
+def voice_tts(request: Request, payload: dict = Body(...)):
+    """Conversation test page: short clips ("ok", "want me to send that?") in a room
+    character's voice. Bearer; same body and WAV result as POST /synthesize
+    ({text, character?, voice?, speed?, sr?, pad_ms?}); unknown character = 404."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    return synthesize(payload)
 
 
 @app.get("/api/voice/characters")
