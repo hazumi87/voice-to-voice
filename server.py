@@ -1831,15 +1831,83 @@ async def voice_stt(request: Request):
     return out
 
 
+_TTS_PARAPHRASE_LEVELS = {"off": "off", "none": "off", "low": "low", "subtle": "low",
+                          "med": "med", "medium": "med", "high": "high", "full": "high"}
+
+
+def _paraphrase_for_tts(text: str, level: str, char: dict | None) -> str:
+    """Conversation test page (lead, line 8053): off = verbatim; low = cadence-only restyle;
+    med = light reword; high = free reword in the character's style. Guards: never longer
+    than ~2x the input (cap 30 words), a question stays a question, any failure or empty
+    output = verbatim. The WHAT must survive; this only changes the HOW."""
+    text = (text or "").strip()
+    if level == "off" or not text:
+        return text
+    name = (char or {}).get("name") or ""
+    style = ((char or {}).get("style") or "").strip()
+    is_q = text.rstrip().endswith("?")
+    try:
+        if level == "low":
+            out = _style_line(text, style) if style else text
+        else:
+            system = assemble_reword_system(name, (char or {}).get("bio", ""), style,
+                                            "light" if level == "med" else "full")
+            system += (" Keep it SHORT: at most as long as the input, never more than twice. "
+                       + ("It is a yes/no question: keep it a question ending in '?'. " if is_q else "")
+                       + "Output only the line.")
+            out = (_ollama_chat([{"role": "system", "content": system},
+                                 {"role": "user", "content": text}],
+                                num_predict=80, temperature=0.5 if level == "med" else 0.7) or "").strip()
+        out = _strip_stage_directions(out).strip().strip('"').strip()
+        words = out.split()
+        if not out or len(words) > max(8, min(30, 2 * len(text.split()))):
+            return text
+        low = out.lower()
+        if any(tok in low for tok in _STYLE_BAD_TOKENS):
+            return text
+        if is_q and not out.endswith("?"):
+            out = out.rstrip(".!") + "?"
+        return out
+    except Exception as e:  # noqa: BLE001 — never block the clip on the reworder
+        print(f"[voice/tts] paraphrase {level} failed ({e!r}); verbatim", flush=True)
+        return text
+
+
 @app.post("/api/voice/tts")
 def voice_tts(request: Request, payload: dict = Body(...)):
     """Conversation test page: short clips ("ok", "want me to send that?") in a room
     character's voice. Bearer; same body and WAV result as POST /synthesize
-    ({text, character?, voice?, speed?, sr?, pad_ms?}); unknown character = 404."""
+    ({text, character?, voice?, speed?, sr?, pad_ms?}) plus `paraphrase`:
+    off|low|med|high (default off = verbatim). Answers with X-Spoken-Text (URI-encoded,
+    what was actually said) and X-Paraphrase (the level applied). Unknown character = 404.
+    Callers cache only the "off" clips; paraphrased ones differ each time."""
     who = _voice_auth(request)
     if not who:
         return _voice_unauth()
-    return synthesize(payload)
+    level = _TTS_PARAPHRASE_LEVELS.get(str(payload.get("paraphrase") or "off").strip().lower(), "off")
+    text = str(payload.get("text") or "").strip()
+    char = None
+    char_key = str(payload.get("character") or "").strip()
+    if char_key:
+        char = find_character(char_key)
+        if char is None:
+            return JSONResponse({"error": "unknown_character", "character": char_key,
+                                 "known": [c["id"] for c in CHARACTERS]}, status_code=404)
+    spoken = _paraphrase_for_tts(text, level, char) if level != "off" else text
+    body = dict(payload)
+    body["text"] = spoken
+    body.pop("paraphrase", None)      # /synthesize's own paraphrase flag is a different thing
+    resp = synthesize(body)
+    if isinstance(resp, Response) and not isinstance(resp, JSONResponse):
+        resp.headers["X-Spoken-Text"] = urllib.parse.quote(spoken)
+        resp.headers["X-Paraphrase"] = level
+        resp.headers["X-Input-Text"] = urllib.parse.quote(text)
+        expose = resp.headers.get("Access-Control-Expose-Headers", "")
+        resp.headers["Access-Control-Expose-Headers"] = (expose + "," if expose else "") + \
+            "X-Spoken-Text,X-Paraphrase,X-Input-Text"
+    print(f"[voice/tts] from={who} level={level} char={char_key or '-'} in={text!r} spoken={spoken!r}",
+          flush=True)
+    return resp
 
 
 @app.get("/api/voice/characters")
