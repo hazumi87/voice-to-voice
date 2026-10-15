@@ -238,3 +238,9 @@
   Verified by harbor's counter: 2325 -> 1123 MiB on release, reload via synth 15.5 s -> 2373.
 - GET /gpu/debug (?empty=1): torch allocated/reserved, OmniVoice referrers, largest CUDA tensors, owning modules.
 - Floor 6.5 GB (asset-platform measured a 5.4 GB load peak).
+
+## 2026-10-15T03:40Z — Concierge turn endpoint for the conversation test page
+- New `concierge_turn.py` + `POST /api/voice/concierge-turn` {draft, utterance, name, handle} -> {addressed, kind edit|question|content, draft, reply, changes, text (@handle form), keep (the non-addressed sentences), proofread, via, model_ms, model_error}.
+- Grammar first (vocative at start/end vs object markers; change X to Y, replace/with, remove X, remove the last sentence, add X after/before Y / at the end, hear me, word count, read back); llama3.2:3b only for the unclear "addressed?" cases, free-form edits and proofreads, and it only proposes a change list that is verified against the draft (exact, then fuzzy for STT slips). Proofread: doubled small words fixed deterministically, single-word changes that are ambiguous in the draft dropped.
+- Tests: tools/concierge_turn_test.py (55 scenarios, fake model). Live: rule cases ~3 ms, model ~0.3-0.45 s warm, ~2.2-3.9 s on a cold load.
+- Also fixed voice-test-turns.mjs per the lead's log (ack not spent while a prompt is pending; no re-prompt after "no"; weak yes-words only on short answers), 6d3dc12.

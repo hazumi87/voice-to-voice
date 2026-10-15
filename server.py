@@ -92,6 +92,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 HERE = os.path.dirname(os.path.abspath(__file__))
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 import gpu_cop_client  # harbor GPU traffic cop (gpu-cop/1): load gates + /gpu/status helpers
+import concierge_turn  # conversation test page: the Concierge's judgement on a named line
 import hold_clips  # pre-rendered "warming up" lines, played while OmniVoice reloads
 OLLAMA_MODEL = "llama3.2:3b"  # smaller/faster for snappy turns
 
@@ -1917,6 +1918,34 @@ def voice_tts(request: Request, payload: dict = Body(...)):
     print(f"[voice/tts] from={who} level={level} char={char_key or '-'} in={text!r} spoken={spoken!r}",
           flush=True)
     return resp
+
+
+@app.post("/api/voice/concierge-turn")
+def voice_concierge_turn(request: Request, payload: dict = Body(...)):
+    """Conversation test page (engine proxies it as POST /api/voice/test/concierge): the
+    Concierge's judgement on one dictated line that carries its name. Body {draft,
+    utterance, name, handle}; answer {addressed, kind: edit|question|content, draft, reply,
+    changes:[{from,to}], text (the @handle form), proofread, via, model_ms, model_error}.
+    Grammar first, the 3B only for the ambiguous cases; the model proposes changes and
+    concierge_turn verifies each against the draft (see concierge_turn.py). Never 5xx on
+    model trouble: the line comes back as content with model_error set."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    utterance = str(payload.get("utterance") or "").strip()
+    if not utterance:
+        return JSONResponse({"error": "empty_utterance"}, status_code=400)
+    draft = str(payload.get("draft") or "")[:20000]
+    name = str(payload.get("name") or "").strip()[:40]
+    handle = str(payload.get("handle") or "").strip()[:32]
+    t0 = time.time()
+    out = concierge_turn.decide(draft, utterance, name, handle)
+    out["ms"] = int((time.time() - t0) * 1000)
+    out["caller"] = who
+    print(f"[voice/concierge] from={who} name={name!r} addressed={out['addressed']} kind={out['kind']} "
+          f"via={out['via']} ms={out['ms']} model_ms={out['model_ms']} changes={len(out['changes'])} "
+          f"err={out['model_error']!r} utt={utterance[:80]!r}", flush=True)
+    return out
 
 
 @app.get("/api/voice/characters")
