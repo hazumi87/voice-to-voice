@@ -812,13 +812,17 @@ def transcribe(audio_bytes: bytes) -> str:
     return text
 
 
-def transcribe_detail(audio_bytes: bytes) -> dict:
+def transcribe_detail(audio_bytes: bytes, hint: str = "") -> dict:
     """Transcript WITH per-word and per-segment times (conversation test page, 2026-10-14):
-    the page measures speech length and pauses from these, not from the mic level."""
+    the page measures speech length and pauses from these, not from the mic level.
+    `hint` (concierge-name-stt.md rule 3): the Concierge's display name, e.g. "Olivia",
+    handed to faster-whisper as hotwords so it spells the name right. Empty = unchanged."""
     t0 = time.time()
+    hint = " ".join((hint or "").split())[:80]
+    kw = {"hotwords": hint} if hint else {}
     with stt_lock:
         segments, info = stt_model.transcribe(
-            io.BytesIO(audio_bytes), language="en", beam_size=1, word_timestamps=True
+            io.BytesIO(audio_bytes), language="en", beam_size=1, word_timestamps=True, **kw
         )
         words, segs = [], []
         for seg in segments:
@@ -833,7 +837,7 @@ def transcribe_detail(audio_bytes: bytes) -> dict:
             "duration_s": round(float(getattr(info, "duration", 0.0) or 0.0), 3),
             "speech_s": round((words[-1]["end"] - words[0]["start"]) if words else 0.0, 3),
             "word_count": len(words), "language": getattr(info, "language", "en"),
-            "stt_ms": int((time.time() - t0) * 1000)}
+            "stt_ms": int((time.time() - t0) * 1000), "hint": hint or None}
 
 
 def chat(user_text: str, personality_id: str = DEFAULT_PERSONALITY,
@@ -1810,20 +1814,24 @@ async def voice_stt(request: Request):
         return _voice_unauth()
     ctype = (request.headers.get("content-type") or "").lower()
     raw = b""
+    hint = ""
     if ctype.startswith("multipart/"):
         form = await request.form()
         up = form.get("audio") or form.get("file")
         if up is not None and hasattr(up, "read"):
             raw = await up.read()
+        h = form.get("hint")
+        if isinstance(h, str):
+            hint = h.strip()[:80]       # the Concierge's display name; raw-body callers have none
     else:
         raw = await request.body()
     if not raw or len(raw) < 100:
         return JSONResponse({"error": "empty_audio"}, status_code=400)
     if len(raw) > 8 * 1024 * 1024:
         return JSONResponse({"error": "too_large", "max_bytes": 8 * 1024 * 1024}, status_code=413)
-    _stt_log(f"[voice/stt] {who}: {len(raw)} bytes")
+    _stt_log(f"[voice/stt] {who}: {len(raw)} bytes hint={hint!r}")
     try:
-        out = await asyncio.get_event_loop().run_in_executor(None, transcribe_detail, raw)
+        out = await asyncio.get_event_loop().run_in_executor(None, transcribe_detail, raw, hint)
     except Exception as e:  # noqa: BLE001
         _stt_log(f"[voice/stt] FAILED: {e!r}")
         return JSONResponse({"error": "stt_failed", "detail": str(e)}, status_code=500)
