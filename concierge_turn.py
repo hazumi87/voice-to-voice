@@ -90,6 +90,9 @@ _QUESTION_START_RE = re.compile(
     r"^(?:can|could|do|does|did|are|is|what|what's|where|how|why|who|when|will|would|which|have|has|am)\b")
 _HEAR_RE = re.compile(r"\b(?:hear me|are you there|you there|still there|are you listening|you listening|awake)\b")
 _COUNT_RE = re.compile(r"\b(?:how many words|word count|how long is (?:it|that|this|the draft)|how much (?:do i|have i|is there))\b")
+_LOOK_RE = re.compile(
+    r"\b(?:take a look|have a look|look at (?:this|that|it|the draft)|check (?:this|that|it) out|check (?:this|that|it)"
+    r"|review (?:this|that|it|the draft)|see (?:this|that|it)|what do you think|thoughts|look (?:this|that|it) over|go over (?:this|that|it))\b")
 _READBACK_RE = re.compile(r"\b(?:read (?:it|that|this|the draft|the text|the message) back|read back|what did i say|what have i said|what's in the draft|what do you have|what have you got|repeat (?:it|that|the draft))\b")
 
 
@@ -341,12 +344,15 @@ def _model_proofread(chat, name: str, draft: str, names: list[str]) -> dict:
 def _model_reply(chat, name: str, draft: str, question: str) -> str:
     system = (
         f"You are {name}, a concierge helping a person dictate a message. They asked you something "
-        "while composing. Answer in ONE short spoken sentence (at most twenty words), plainly, no "
-        "emoji, no lists. If the question is about the draft, answer from the draft. Answer JSON only: "
-        "{\"reply\": \"...\"}.")
+        "while composing. Answer in ONE short spoken sentence (at most fifteen words), plainly, no "
+        "emoji, no lists. Only state what the draft itself says; you know nothing about the world "
+        "outside it. If the question is open or unclear, ask what they want you to do, in one short "
+        "sentence. Answer JSON only: {\"reply\": \"...\"}.")
     user = f"DRAFT SO FAR:\n{draft or '(nothing yet)'}\n\nTHEY SAID:\n{question}"
     out = chat([{"role": "system", "content": system}, {"role": "user", "content": user}], _REPLY_SCHEMA, 80)
-    return str(out.get("reply") or "").strip()
+    reply = str(out.get("reply") or "").strip()
+    first = re.split(r"(?<=[.!?])\s+", reply)[0] if reply else ""
+    return first if 0 < len(words(first)) <= 20 else reply[:140]
 
 
 def _proof_ok(frm: str, to: str, draft: str) -> bool:
@@ -577,6 +583,17 @@ def decide(draft: str, utterance: str, name: str, handle: str = "", chat=ollama_
     if _READBACK_RE.search(instr):
         out["kind"] = "question"
         out["reply"] = draft.strip() or "Nothing yet."
+        return out
+    if _LOOK_RE.search(instr) and not _EDIT_CUE_RE.search(instr):
+        # an open "take a look": a read-back and a question, never a free-form claim
+        out["kind"] = "question"
+        dw = len(words(draft))
+        if not dw:
+            out["reply"] = "There is nothing in the draft yet. What should I look for?"
+        elif dw <= 16:
+            out["reply"] = f"I have: {draft.strip()} What should I look for?"
+        else:
+            out["reply"] = f"I have the draft, {dw} words. What should I look for?"
         return out
 
     # free-form edit via the model, verified against the draft

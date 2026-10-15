@@ -173,6 +173,16 @@ check("addressed content: keep empty", r["kind"] == "content" and r["keep"] == "
 r = dec("Olivia, remove unicorns")
 check("rule miss -> model -> still not found -> rule's reply", r["kind"] == "edit" and r["changes"] == [] and r["reply"] == "I can't find unicorns in the draft." and r["via"] == "model", r)
 
+print("open 'take a look' -> read-back + question, no model")
+r = dec("I'm wondering if there's anything else I can do there. Olivia, can you take a look at this?", draft="I want three bananas on the table.")
+check("short draft read back", r["kind"] == "question" and r["via"] == "rule" and r["reply"] == "I have: I want three bananas on the table. What should I look for?", r["reply"])
+r = dec("Olivia what do you think", draft=" ".join(["word"] * 30))
+check("long draft -> count", r["reply"] == "I have the draft, 30 words. What should I look for?", r["reply"])
+r = dec("Olivia have a look", draft="")
+check("empty draft", r["reply"].startswith("There is nothing in the draft yet."))
+r = dec("Olivia take a look and change bananas to apples")
+check("look + edit cue stays an edit", r["kind"] == "edit", r)
+
 print("model question")
 r = dec("Olivia what is the draft about")
 check("short model reply", r["kind"] == "question" and r["reply"] == "It is about bananas on a table." and r["draft"] == D)
