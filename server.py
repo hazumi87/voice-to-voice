@@ -1948,6 +1948,30 @@ def voice_concierge_turn(request: Request, payload: dict = Body(...)):
     return out
 
 
+@app.post("/api/voice/assess")
+def voice_assess(request: Request, payload: dict = Body(...)):
+    """Conversation test page (engine proxies it as POST /api/voice/test/assess): after every
+    pause, what the Concierge thinks the person wants, named or not. Display only. Body
+    {draft, utterance, name, handle?}; answer {intent: delegate|act|dictate, why, would,
+    target, via, model_ms, model_error, ms}. Same failure contract as concierge-turn."""
+    who = _voice_auth(request)
+    if not who:
+        return _voice_unauth()
+    utterance = str(payload.get("utterance") or "").strip()
+    if not utterance:
+        return JSONResponse({"error": "empty_utterance"}, status_code=400)
+    draft = str(payload.get("draft") or "")[:20000]
+    name = str(payload.get("name") or "").strip()[:40]
+    handle = str(payload.get("handle") or "").strip()[:32]
+    t0 = time.time()
+    out = concierge_turn.assess(draft, utterance, name, handle)
+    out["ms"] = int((time.time() - t0) * 1000)
+    out["caller"] = who
+    print(f"[voice/assess] from={who} intent={out['intent']} target={out['target']!r} via={out['via']} "
+          f"ms={out['ms']} model_ms={out['model_ms']} err={out['model_error']!r} utt={utterance[:80]!r}", flush=True)
+    return out
+
+
 @app.get("/api/voice/characters")
 def voice_characters(request: Request):
     """Room-voice §10.1: the character catalogue for a room's voice setting, proxied by the

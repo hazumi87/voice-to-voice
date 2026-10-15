@@ -632,3 +632,193 @@ def decide(draft: str, utterance: str, name: str, handle: str = "", chat=ollama_
     out["kind"] = "content"
     out["keep"] = ""   # `text` carries the whole line
     return out
+
+
+# =================================================================================
+# assess(): after every pause, what the Concierge THINKS the person wants, name or not.
+# Display only (Eric #8475): intent delegate | act | dictate, with the cue she read, what
+# she would do, and the target for a delegate. Rules where the line is obvious; the 3B for
+# the rest. A line that names the Concierge goes through decide() and maps edit -> act,
+# question -> delegate (to the Concierge), content -> dictate.
+# =================================================================================
+SEND_PHRASES = ["send that", "send it", "send this", "go ahead and send", "go ahead and send it",
+                "that's it send it", "that's it send", "send the message", "submit", "ship it", "send"]
+_LOOKUP_RE = re.compile(
+    r"^" + _POLITE + r"(?:look up|look into|find out|find me|find|search for|search|pull up|fetch|get me"
+    r"|check (?:on|with|whether|if|the|how|what|when)|see if|see whether|figure out|dig up|grab|bring up)\b\s*(?P<rest>.*)$")
+_ACT_RE = re.compile(
+    r"^" + _POLITE + r"(?:undo|redo|change|replace|swap|switch|delete|remove|drop|take out|cut|strike|scrap|erase"
+    r"|insert|add|put|append|prepend|capitali[sz]e|lower\s?case|upper\s?case|rename|rephrase|reword|rewrite|shorten"
+    r"|fix|correct|move|go back|start over|clear (?:the draft|that|it|everything)|make (?:it|that|this|the)"
+    r"|instead of|never mind|nevermind|scratch that|forget that)\b")
+_DICTATE_LEAD_RE = re.compile(
+    r"^(?:the|a|an|i|i'm|i'd|i'll|i've|we|we're|we'll|we've|it|it's|this|that|these|those|there|there's|here|he|she|they"
+    r"|my|our|your|so|and|but|also|then|when|if|because|for|in|on|at|with|as|to|of|by|first|second|next|finally|one|two|three"
+    r"|no|not|yes|ok|okay|um|uh|well|basically|actually|maybe|probably|something|some|all|every|each|most|more|less"
+    r"|you|you're|what|which|how|why|where|who|is|are|was|were|should|would|could|will|can|do|does|did|has|have|had)\b")
+_UNDO_RE = re.compile(r"^" + _POLITE + r"(?:undo|go back|scratch that|never ?mind|forget that|start over|redo)\b")
+
+_ASSESS_SCHEMA = {"type": "object",
+                  "properties": {"intent": {"type": "string", "enum": ["delegate", "act", "dictate"]},
+                                 "why": {"type": "string"}, "would": {"type": "string"},
+                                 "target": {"type": ["string", "null"]}},
+                  "required": ["intent", "why", "would", "target"]}
+
+
+def detect_send(text: str, phrases=SEND_PHRASES):
+    """Python twin of voice-test-turns.mjs detectSend: the line IS or ENDS WITH a send phrase."""
+    t = norm(text)
+    if not t:
+        return None
+    for p in sorted((norm(x) for x in phrases), key=len, reverse=True):
+        if t == p:
+            return {"phrase": p, "rest": ""}
+        if t.endswith(" " + p):
+            return {"phrase": p, "rest": t[:-len(p)].strip()}
+    return None
+
+
+def _clip(text: str, n: int) -> str:
+    ws = str(text or "").split()
+    return " ".join(ws[:n]) + ("…" if len(ws) > n else "")
+
+
+def _would_from_changes(d: dict) -> str:
+    ch = d.get("changes") or []
+    if not ch:
+        return _clip(d.get("reply") or "edit the draft", 15)
+    c = ch[0]
+    if not c["to"]:
+        w = f"remove '{_clip(c['from'], 6)}'"
+    elif not c["from"]:
+        w = f"add '{_clip(c['to'], 6)}'"
+    else:
+        w = f"change '{_clip(c['from'], 5)}' to '{_clip(c['to'], 5)}'"
+    if len(ch) > 1:
+        w += f" and {len(ch) - 1} more"
+    return w
+
+
+def _model_assess(chat, name: str, draft: str, utterance: str) -> dict:
+    system = (
+        f"You are {name or 'the concierge'}, listening while a person dictates a message in a workroom. "
+        "After each pause you say what you think they want. Classify the NEWEST line:\n"
+        "- delegate: they want data looked up, or a message delivered to a person or agent.\n"
+        "- act: they want words changed in the draft or in something already said (edit, undo, remove).\n"
+        "- dictate: no action; they are composing the message itself (specs, descriptions, opinions).\n"
+        "Answer JSON only: {\"intent\": \"delegate\"|\"act\"|\"dictate\", \"why\": \"the cue you read, at most 12 words\", "
+        "\"would\": \"what you would do, at most 15 words, e.g. change 'blue' to 'green' / ask platform for the data / keep it in the draft\", "
+        "\"target\": \"who to reach for a delegate, else null\"}. When unsure, dictate.")
+    user = f"DRAFT SO FAR:\n{draft or '(nothing yet)'}\n\nNEWEST LINE:\n{utterance}"
+    return chat([{"role": "system", "content": system}, {"role": "user", "content": user}], _ASSESS_SCHEMA, 120)
+
+
+def assess(draft: str, utterance: str, name: str = "", handle: str = "", chat=ollama_chat) -> dict:
+    draft = str(draft or "")
+    utterance = str(utterance or "")
+    name = str(name or "").strip()
+    out = {"intent": "dictate", "why": "", "would": "keep it in the draft", "target": None,
+           "via": "rule", "model_ms": None, "model_error": None}
+    t = norm(utterance)
+    if not t:
+        return out
+    t_model = [0.0]
+
+    def timed_chat(messages, fmt, num_predict=120):
+        t0 = time.time()
+        try:
+            return chat(messages, fmt, num_predict)
+        finally:
+            t_model[0] += time.time() - t0
+            out["via"] = "model"
+            out["model_ms"] = int(t_model[0] * 1000)
+
+    # 1. the line names the Concierge: concierge-turn's classifier is the cheap path
+    if name or handle:
+        d = decide(draft, utterance, name, handle, chat=timed_chat)
+        out["model_error"] = d.get("model_error")
+        if d["addressed"]:
+            out["concierge"] = d["kind"]
+            if d["kind"] == "edit":
+                out["intent"] = "act"
+                out["why"] = f"{name or 'the concierge'} was asked to " + ("proofread" if d.get("proofread") else "edit")
+                out["would"] = _would_from_changes(d)
+                return out
+            if d["kind"] == "question":
+                out["intent"] = "delegate"
+                out["target"] = name or handle
+                out["why"] = f"a question for {name or handle}"
+                out["would"] = _clip(d.get("reply") or "answer", 15)
+                return out
+            out["why"] = f"{name or handle} named, no instruction"
+            return out
+
+    # 2. send phrase -> deliver the draft
+    s = detect_send(utterance)
+    if s:
+        out["intent"] = "delegate"
+        out["why"] = f"send phrase '{s['phrase']}'"
+        try:
+            import room_agent
+            who = room_agent.extract_addressee(draft) or (room_agent.extract_addressee(s["rest"]) if s["rest"] else None)
+        except Exception:  # noqa: BLE001
+            who = None
+        m = re.search(r"@([a-z][a-z0-9_-]{1,31})", (draft + " " + utterance).lower())
+        out["target"] = who or (m.group(1) if m else None)
+        out["would"] = f"send the draft to {out['target']}" if out["target"] else "send the draft"
+        return out
+
+    # 3. "tell X / ask X / let X know" -> deliver a message
+    try:
+        import room_agent
+        who = room_agent.extract_addressee(utterance)
+    except Exception:  # noqa: BLE001
+        who = None
+    if who:
+        out["intent"] = "delegate"
+        out["target"] = who
+        out["why"] = f"message for {who}"
+        out["would"] = f"deliver it to {who}"
+        return out
+
+    # 4. "look up / find / check whether" -> a lookup
+    m = _LOOKUP_RE.match(t)
+    if m:
+        out["intent"] = "delegate"
+        out["why"] = "a lookup request"
+        out["would"] = f"look up {_clip(m.group('rest'), 8)}" if m.group("rest") else "look it up"
+        return out
+
+    # 5. edit verbs up front -> act (decide() with the name prefixed gives the concrete change)
+    if _ACT_RE.match(t):
+        out["intent"] = "act"
+        if _UNDO_RE.match(t):
+            out["why"] = "an undo"
+            out["would"] = "undo the last change"
+            return out
+        nm = name or "Concierge"
+        d = decide(draft, nm + ", " + utterance, nm, handle, chat=timed_chat)
+        out["model_error"] = d.get("model_error")
+        out["why"] = "an edit instruction"
+        out["would"] = _would_from_changes(d)
+        return out
+
+    # 6. plain prose -> dictate, no model
+    if _DICTATE_LEAD_RE.match(t) or len(t.split()) >= 14:
+        out["why"] = "plain dictation"
+        return out
+
+    # 7. the rest: the model decides, dictate when it can't
+    try:
+        res = _model_assess(timed_chat, name, draft, utterance)
+        intent = str(res.get("intent") or "dictate")
+        out["intent"] = intent if intent in ("delegate", "act", "dictate") else "dictate"
+        out["why"] = _clip(res.get("why") or "", 12)
+        out["would"] = _clip(res.get("would") or "", 15) or ("keep it in the draft" if out["intent"] == "dictate" else "")
+        tgt = res.get("target")
+        if tgt and out["intent"] == "delegate" and str(tgt).strip().lower() not in ("null", "none", ""):
+            out["target"] = str(tgt).strip()
+    except Exception as e:  # noqa: BLE001
+        out["model_error"] = f"{type(e).__name__}: {e}"[:200]
+        out["why"] = "unclear; model unavailable"
+    return out

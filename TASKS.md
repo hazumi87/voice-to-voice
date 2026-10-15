@@ -244,3 +244,8 @@
 - Grammar first (vocative at start/end vs object markers; change X to Y, replace/with, remove X, remove the last sentence, add X after/before Y / at the end, hear me, word count, read back); llama3.2:3b only for the unclear "addressed?" cases, free-form edits and proofreads, and it only proposes a change list that is verified against the draft (exact, then fuzzy for STT slips). Proofread: doubled small words fixed deterministically, single-word changes that are ambiguous in the draft dropped.
 - Tests: tools/concierge_turn_test.py (55 scenarios, fake model). Live: rule cases ~3 ms, model ~0.3-0.45 s warm, ~2.2-3.9 s on a cold load.
 - Also fixed voice-test-turns.mjs per the lead's log (ack not spent while a prompt is pending; no re-prompt after "no"; weak yes-words only on short answers), 6d3dc12.
+
+## 2026-10-15T04:20Z — POST /api/voice/assess (what the Concierge thinks you want, after every pause)
+- concierge_turn.assess(draft, utterance, name, handle) -> {intent delegate|act|dictate, why, would, target, via, model_ms, model_error}; route in server.py with the concierge-turn failure contract. Display only (Eric #8475).
+- Rules: a named line reuses decide() (edit->act, question->delegate to the Concierge, content->dictate); send phrase -> delegate (target from "tell X" in the draft or an @handle); tell/ask X -> delegate X (room_agent.extract_addressee); look up/find/check whether -> delegate; edit verbs up front -> act with the concrete change from decide(); undo/scratch that -> act; prose leads or >=14 words -> dictate. The 3B only for short unclear lines, dictate when it fails.
+- Tests tools/concierge_assess_test.py (27). Live: rules ~2 ms, model 0.35 s warm / 5 s cold.
