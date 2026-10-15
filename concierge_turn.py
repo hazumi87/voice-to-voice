@@ -657,6 +657,27 @@ _DICTATE_LEAD_RE = re.compile(
     r"|no|not|yes|ok|okay|um|uh|well|basically|actually|maybe|probably|something|some|all|every|each|most|more|less"
     r"|you|you're|what|which|how|why|where|who|is|are|was|were|should|would|could|will|can|do|does|did|has|have|had)\b")
 _UNDO_RE = re.compile(r"^" + _POLITE + r"(?:undo|go back|scratch that|never ?mind|forget that|start over|redo)\b")
+_STRONG_ACT_RE = re.compile(
+    r"^" + _POLITE + r"(?:change|replace|swap|switch|delete|remove|drop|take out|cut|strike|scrap|erase"
+    r"|rephrase|reword|rewrite|shorten|capitali[sz]e|lower\s?case|upper\s?case|rename|instead of|clear (?:the draft|that|it|everything))\b")
+# words that point at the draft itself rather than at the thing being described
+_DRAFT_WORDS = {"sentence", "sentences", "word", "words", "line", "lines", "paragraph", "draft", "text",
+                "message", "note", "first", "last", "second", "third", "beginning", "end", "start", "title",
+                "greeting", "opening", "closing", "that", "this", "it"}
+_STOP = {"the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "at", "for", "with", "under", "over",
+         "into", "from", "by", "as", "is", "are", "be", "it", "its", "this", "that", "these", "those", "please",
+         "can", "could", "would", "you", "me", "we", "i", "so", "then", "also", "just", "make", "put", "add",
+         "insert", "move", "fix", "correct", "append", "prepend", "more", "less", "very", "bit", "little"}
+
+
+def _refers_to_draft(t: str, draft: str) -> bool:
+    """Does an imperative point at the draft? Yes if it uses a draft word ("the second
+    sentence") or shares a content word with the draft; no when every noun is new."""
+    tw = [w for w in t.split() if w not in _STOP]
+    if any(w in _DRAFT_WORDS for w in tw):
+        return True
+    dw = set(words(draft))
+    return any(len(w) >= 3 and w in dw for w in tw)
 
 _ASSESS_SCHEMA = {"type": "object",
                   "properties": {"intent": {"type": "string", "enum": ["delegate", "act", "dictate"]},
@@ -748,7 +769,7 @@ def assess(draft: str, utterance: str, name: str = "", handle: str = "", chat=ol
                 out["intent"] = "delegate"
                 out["target"] = name or handle
                 out["why"] = f"a question for {name or handle}"
-                out["would"] = _clip(d.get("reply") or "answer", 15)
+                out["would"] = "answer: " + _clip(d.get("reply") or "…", 14)
                 return out
             out["why"] = f"{name or handle} named, no instruction"
             return out
@@ -789,18 +810,30 @@ def assess(draft: str, utterance: str, name: str = "", handle: str = "", chat=ol
         out["would"] = f"look up {_clip(m.group('rest'), 8)}" if m.group("rest") else "look it up"
         return out
 
-    # 5. edit verbs up front -> act (decide() with the name prefixed gives the concrete change)
+    # 5. edit verbs up front -> act (decide() with the name prefixed gives the concrete change).
+    # "Make the button blue and put it under the logo" is spec dictation, not an edit: a weak
+    # imperative (make/put/add/move/fix …) whose words are not in the draft, or that names no
+    # change, reads dictate. A strong one (change/replace/remove/undo …) is an edit even when
+    # the words are not found.
     if _ACT_RE.match(t):
-        out["intent"] = "act"
         if _UNDO_RE.match(t):
+            out["intent"] = "act"
             out["why"] = "an undo"
             out["would"] = "undo the last change"
+            return out
+        strong = bool(_STRONG_ACT_RE.match(t))
+        if not strong and not _refers_to_draft(t, draft):
+            out["why"] = "an imperative about the thing described, not the draft"
             return out
         nm = name or "Concierge"
         d = decide(draft, nm + ", " + utterance, nm, handle, chat=timed_chat)
         out["model_error"] = d.get("model_error")
-        out["why"] = "an edit instruction"
-        out["would"] = _would_from_changes(d)
+        if d.get("changes") or strong:
+            out["intent"] = "act"
+            out["why"] = "an edit instruction"
+            out["would"] = _would_from_changes(d)
+        else:
+            out["why"] = "an imperative, but nothing in the draft to change"
         return out
 
     # 6. plain prose -> dictate, no model

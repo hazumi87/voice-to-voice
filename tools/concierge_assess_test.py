@@ -27,6 +27,8 @@ def fake_chat(messages, fmt, num_predict=120):
             return {"intent": "delegate", "why": "asks for results", "would": "ask concierge-ops for igloo results", "target": "concierge-ops"}
         return {"intent": "dictate", "why": "sounds like spec text", "would": "keep it in the draft", "target": None}
     if "edit a dictated draft" in system:
+        if "title" in user or "unicorns" in user:
+            return {"changes": [], "reply": "No change can be made to the text."}
         return {"changes": [{"from": "quick", "to": "fast"}], "reply": "Changed quick to fast."}
     if '"addressed"' in system:
         return {"addressed": False}
@@ -76,6 +78,17 @@ check("add at the end", r["intent"] == "act" and r["would"] == "add 'please'", r
 r = a("change unicorns to horses", chat=boom)
 check("act with no placeable change and model down", r["intent"] == "act" and "can't find unicorns" in r["would"], r)
 
+print("imperatives that describe the thing, not the draft (lead's probe)")
+calls.clear()
+r = a("Make the button blue and put it under the logo.")
+check("weak imperative, no draft nouns -> dictate by rule", r["intent"] == "dictate" and r["via"] == "rule" and not calls and r["would"] == "keep it in the draft", r)
+r = a("put bananas in the title")
+check("weak imperative sharing a draft word -> model; no change -> dictate", r["intent"] == "dictate" and r["via"] == "model" and "nothing in the draft" in r["why"], r)
+r = a("change unicorns to horses")
+check("strong verb stays act even when not found", r["intent"] == "act" and "can't find unicorns" in r["would"], r)
+r = a("make the second sentence say make it fast")
+check("weak imperative with a draft word and a change -> act", r["intent"] == "act" and r["would"] == "change 'quick' to 'fast'", r)
+
 print("rules: dictate")
 r = a("the button should be green and sit under the logo")
 check("plain prose", r["intent"] == "dictate" and r["why"] == "plain dictation" and r["via"] == "rule", r)
@@ -88,7 +101,7 @@ print("named lines go through concierge-turn")
 r = a("Olivia, change bananas to apples")
 check("edit -> act", r["intent"] == "act" and r["concierge"] == "edit" and r["would"] == "change 'bananas' to 'apples'", r)
 r = a("Olivia can you hear me")
-check("question -> delegate to Olivia", r["intent"] == "delegate" and r["target"] == "Olivia" and r["would"] == "Loud and clear.", r)
+check("question -> delegate to Olivia, would is an answer", r["intent"] == "delegate" and r["target"] == "Olivia" and r["would"] == "answer: Loud and clear.", r)
 r = a("ok Olivia this is the spec for the button")
 check("addressed content -> dictate", r["intent"] == "dictate" and r["concierge"] == "content")
 r = a("tell platform to get Olivia the data")
