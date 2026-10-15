@@ -811,29 +811,28 @@ def assess(draft: str, utterance: str, name: str = "", handle: str = "", chat=ol
         return out
 
     # 5. edit verbs up front -> act (decide() with the name prefixed gives the concrete change).
-    # "Make the button blue and put it under the logo" is spec dictation, not an edit: a weak
-    # imperative (make/put/add/move/fix …) whose words are not in the draft, or that names no
-    # change, reads dictate. A strong one (change/replace/remove/undo …) is an edit even when
-    # the words are not found.
+    # Eric #8511: a bare imperative ("make the button blue") reads act even when it does not
+    # point at the draft; `would` then says nothing matches yet. A weak imperative
+    # (make/put/add/move/fix …) with no draft word and no shared content word skips the model.
     if _ACT_RE.match(t):
+        out["intent"] = "act"
         if _UNDO_RE.match(t):
-            out["intent"] = "act"
             out["why"] = "an undo"
             out["would"] = "undo the last change"
             return out
         strong = bool(_STRONG_ACT_RE.match(t))
         if not strong and not _refers_to_draft(t, draft):
-            out["why"] = "an imperative about the thing described, not the draft"
+            out["why"] = "an imperative"
+            out["would"] = "edit, but nothing matching in the draft yet"
             return out
         nm = name or "Concierge"
         d = decide(draft, nm + ", " + utterance, nm, handle, chat=timed_chat)
         out["model_error"] = d.get("model_error")
+        out["why"] = "an edit instruction"
         if d.get("changes") or strong:
-            out["intent"] = "act"
-            out["why"] = "an edit instruction"
             out["would"] = _would_from_changes(d)
         else:
-            out["why"] = "an imperative, but nothing in the draft to change"
+            out["would"] = "edit, but nothing matching in the draft yet"
         return out
 
     # 6. plain prose -> dictate, no model
