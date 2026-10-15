@@ -94,5 +94,52 @@ console.log('empty block: silence does nothing');
 t = mk();
 check('no events with nothing composed', types(t.tick(60000)) === '');
 
+console.log('lead #1: prompt pending, STT of the next segment lands after ackSec -> the ack is not spent');
+t = mk({ ackCooldownSec: 0 });
+clock = 0;
+t.segment({ text: 'first part', speechMs: 1000, pauseMs: 0 });
+t.tick(1600);                 // ack
+check('prompt at 8 s', types(t.tick(8100)) === 'prompt');
+t.speechStart();              // the person keeps composing instead of answering
+check('ticks while STT is in flight do nothing', types(t.tick(1900)) === '');
+ev = t.segment({ text: 'second part', speechMs: 1500, pauseMs: 9000 });
+check('segment appends', types(ev) === 'pending' && ev[0].block === 'first part second part');
+check('the silence after it still gets its ok', types(t.tick(1900)) === 'ack');
+check('and only once', types(t.tick(2500)) === '');
+
+console.log('lead #2: after "no" there is no second prompt until new content');
+t = mk();
+clock = 0;
+t.segment({ text: 'draft of the note', speechMs: 1000, pauseMs: 0 });
+t.tick(1600);                 // ack
+check('first prompt', types(t.tick(8100)) === 'prompt');
+t.speechStart();
+ev = t.segment({ text: "No, don't send it.", speechMs: 800, pauseMs: 9000 });
+check('no-send keeps the block', types(ev) === 'no-send' && t.block === 'draft of the note');
+check('no re-prompt after another 8 s', types(t.tick(8100)) === '');
+check('nor after a minute', types(t.tick(60000)) === '');
+t.speechStart();
+t.segment({ text: 'and the deadline', speechMs: 800, pauseMs: 60000 });
+check('new content re-arms the prompt', types(t.tick(8100)) === 'prompt');
+t.speechStart();
+ev = t.segment({ text: 'yes', speechMs: 300, pauseMs: 9000 });
+check('yes sends everything', types(ev) === 'send' && ev[0].block === 'draft of the note and the deadline');
+
+console.log('lead #2b: weak yes-words do not send long utterances');
+check('"Please change the button to blue" is not a yes', detectYesNo('Please change the button to blue') === null);
+check('"Sure, and make the logo bigger too" is not a yes', detectYesNo('Sure, and make the logo bigger too') === null);
+check('"please" alone is a yes', detectYesNo('Please.') === 'yes');
+check('"sure, go" is a yes', detectYesNo('Sure, go.') === 'yes');
+check('"yes, and also the logo" still counts (strong yes up front)', detectYesNo('yes, and also the logo') === 'yes');
+check('"go ahead" is a yes', detectYesNo('Go ahead.') === 'yes');
+check('"the answer is yes I think we should wait" is not a yes', detectYesNo('the answer is yes I think we should wait') === null);
+t = mk();
+clock = 0;
+t.segment({ text: 'first thought', speechMs: 1000, pauseMs: 0 });
+t.tick(8100);
+t.speechStart();
+ev = t.segment({ text: 'Please change the title to draft', speechMs: 2000, pauseMs: 9000 });
+check('content after an unheard prompt is appended, not sent', types(ev) === 'pending' && ev[0].block === 'first thought please change the title to draft');
+
 console.log(fails ? `FAILURES: ${fails}` : 'ALL PASS');
 process.exit(fails ? 1 : 0);

@@ -20,8 +20,10 @@
 // Behaviour (Eric, line 7967): talk until a break; a short break gets ONE soft "ok"
 // (cooldown so it is never chatty) while the text keeps accumulating; nothing is sent
 // until a send phrase ("send that") or, after a long pause, ONE prompt ("want me to
-// send that?") answered yes. "No" keeps the block and keeps listening. A send phrase at
-// the END of a segment sends the words before it. Everything is deterministic.
+// send that?") answered yes. "No" keeps the block and keeps listening: no second prompt
+// until new content is added. A send phrase at the END of a segment sends the words
+// before it. A weak yes ("please", "sure") only counts as a short answer; a long utterance
+// after a prompt is content. Everything is deterministic.
 
 export const DEFAULTS = Object.freeze({
   ackSec: 1.5,            // silence before the soft "ok"
@@ -55,14 +57,31 @@ export function detectSend(text, phrases = DEFAULTS.sendPhrases) {
   return { hit: false, rest: t };
 }
 
-// 'yes' | 'no' | null, judged on the first few words so "yes, and also …" still counts.
+// Yes-words that count only when the whole answer is short. "Please change the button to
+// blue" after an unheard prompt is content, not consent; "please" or "sure, go" alone is.
+export const WEAK_YES = Object.freeze(['please', 'sure', 'correct', 'affirmative', 'ok', 'okay', 'fine']);
+const SHORT_ANSWER_WORDS = 4;
+
+// 'yes' | 'no' | null. A "no" is judged on the first few words (a no is safe: it keeps the
+// block). A "yes" sends, so it needs either a short answer or a strong yes-word up front;
+// a long utterance that merely contains "sure"/"please" is composing, not consent.
 export function detectYesNo(text, yesWords = DEFAULTS.yesWords, noWords = DEFAULTS.noWords) {
   const t = normalize(text);
   if (!t) return null;
-  const head = t.split(' ').slice(0, 4).join(' ');
-  const has = (list) => list.map(normalize).some((w) => w && (head === w || head.startsWith(w + ' ') || (' ' + head + ' ').includes(' ' + w + ' ')));
-  if (has(noWords)) return 'no';     // "no" beats "yes" when both appear ("no, don't send it")
-  if (has(yesWords)) return 'yes';
+  const words = t.split(' ');
+  const head = words.slice(0, SHORT_ANSWER_WORDS).join(' ');
+  const inHead = (w) => head === w || head.startsWith(w + ' ') || (' ' + head + ' ').includes(' ' + w + ' ');
+  const starts = (w) => t === w || t.startsWith(w + ' ');
+  if (noWords.map(normalize).some((w) => w && inHead(w))) return 'no';  // "no" beats "yes" ("no, don't send it")
+  const short = words.length <= SHORT_ANSWER_WORDS;
+  for (const w of yesWords.map(normalize)) {
+    if (!w) continue;
+    if (WEAK_YES.includes(w)) {
+      if (short && inHead(w)) return 'yes';
+    } else if (starts(w) || (short && inHead(w))) {
+      return 'yes';
+    }
+  }
   return null;
 }
 
@@ -72,6 +91,7 @@ export function createTurns(settings = {}) {
   let ackedThisSilence = false;
   let promptedThisSilence = false;
   let pendingPrompt = false; // a prompt was spoken; the next segment is the answer
+  let promptArmed = false;   // new content since the last "no": a prompt may fire again
   let lastAckAt = -Infinity;
 
   const text = () => block.join(' ').replace(/\s+/g, ' ').trim();
@@ -81,6 +101,7 @@ export function createTurns(settings = {}) {
     ackedThisSilence = false;
     promptedThisSilence = false;
     pendingPrompt = false;
+    promptArmed = false;
     lastAckAt = -Infinity;
   }
 
@@ -108,6 +129,9 @@ export function createTurns(settings = {}) {
         return events;
       }
       if (yn === 'no') {
+        // "No" keeps the block and keeps listening: no further prompt until new content
+        // arrives, however long the silence runs.
+        promptArmed = false;
         events.push({ type: 'no-send', block: text() });
         return events;
       }
@@ -124,6 +148,7 @@ export function createTurns(settings = {}) {
     }
 
     block.push(t);
+    promptArmed = true;
     events.push({ type: 'pending', block: text() });
     return events;
   }
@@ -133,15 +158,16 @@ export function createTurns(settings = {}) {
     if (!block.length) return events;
     const ms = Number(silenceMs) || 0;
     const now = cfg.now();
-    if (!ackedThisSilence && !pendingPrompt && ms >= cfg.ackSec * 1000
-        && now - lastAckAt >= cfg.ackCooldownSec * 1000) {
-      ackedThisSilence = true;
-      lastAckAt = now;
-      events.push({ type: 'ack' });
-    } else if (!ackedThisSilence && ms >= cfg.ackSec * 1000) {
-      ackedThisSilence = true;  // inside the cooldown: skip the ack for this silence, once
+    // While a prompt is pending nothing here touches the ack flag: the answer's STT can
+    // land later than ackSec, and the silence after the answer still deserves its "ok".
+    if (!ackedThisSilence && !pendingPrompt && ms >= cfg.ackSec * 1000) {
+      ackedThisSilence = true;  // one decision per silence, ack or not
+      if (now - lastAckAt >= cfg.ackCooldownSec * 1000) {
+        lastAckAt = now;
+        events.push({ type: 'ack' });
+      }
     }
-    if (cfg.promptOn && !promptedThisSilence && !pendingPrompt && ms >= cfg.promptSec * 1000) {
+    if (cfg.promptOn && promptArmed && !promptedThisSilence && !pendingPrompt && ms >= cfg.promptSec * 1000) {
       promptedThisSilence = true;
       pendingPrompt = true;
       events.push({ type: 'prompt', text: cfg.promptText });
